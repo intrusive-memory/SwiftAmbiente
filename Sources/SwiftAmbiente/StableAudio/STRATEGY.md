@@ -92,4 +92,31 @@ the pin is exact.
 Sortie 9 will record the final parity tolerance and observed delta below when the
 pipeline is complete.
 
+## Sortie 6 note — weights format loaded (read before S7–S9)
+
+Sortie 6 parses `model_config.json` (note: **not** `config.json`) and loads
+`model.safetensors` via MLX Swift's `MLX.loadArrays(url:)` (safetensors →
+`[String: MLXArray]`, lazy — shape/dtype are readable without materializing the
+2.2 GB of weights). Facts S7–S9 will build on:
+
+- **Config filename is `model_config.json`.** `config.json` inside
+  `t5gemma-b-b-ul2/` is the *text-encoder* config (S7), not the top-level model.
+- **Tensor namespace is raw PyTorch-style**, e.g.
+  `model.model.preprocess_conv.weight` `[256,256,1]`,
+  `model.model.to_cond_embed.0.weight` `[1024,768]`,
+  `conditioner.conditioners.seconds_total.embedder.embedding.1.weight`
+  `[768,256]`. 685 tensors, F32. `StableAudioModelAssets.knownSFXTensorShapes`
+  pins four of these as a load-sanity gate.
+- **⚠️ Weights-format divergence to resolve in S7–S9:** the Sortie 4 golden
+  fixture was captured by the official Python-MLX backend running weights from
+  **`stabilityai/stable-audio-3-optimized`** (MLX-converted), whereas the model
+  shipped/loaded here is **`stabilityai/stable-audio-3-small-sfx`** with the raw
+  PyTorch tensor names above. The official reference's MLX modules may expect
+  *converted* key names (and possibly transposed/fused conv or attention
+  weights) rather than these raw `model.model.*` / `conditioner.conditioners.*`
+  keys. Before translating a module, S7–S9 must confirm whether the loaded
+  small-sfx tensors map 1:1 onto the reference's expected weight keys or whether
+  a name/layout conversion step (matching what `optimized` did) is required.
+  This is the most likely source of a silent parity failure.
+
 <!-- Sortie 9: parity tolerance + observed delta recorded here. -->
