@@ -145,6 +145,17 @@ public struct StableAudioModelConfig: Codable, Sendable, Equatable {
   }
 
   /// The DiT hyperparameters consumed by the Sortie 8 sampler.
+  ///
+  /// Every field that differs between the SA3 DiT variants (sm vs medium) is
+  /// read straight from `model.diffusion.config` — `embed_dim` (1024 vs 1536),
+  /// `depth` (20 vs 24), `num_heads` (16 vs 24), plus `io_channels`, the
+  /// conditioning dims, `local_add_cond_dim`, and `num_memory_tokens`. The DiT
+  /// network reads these; it never hardcodes them. Two derived quantities
+  /// (``headDim`` = `embed_dim / num_heads`, ``ffInner`` = `embed_dim × 4`) and
+  /// two family-wide constants that are NOT carried as scalar keys in the
+  /// diffusion block (rope partial-dims = 32, timestep Fourier dim = 256) are
+  /// the only values not decoded here — mirroring the reference, which likewise
+  /// derives / hardcodes exactly those.
   public struct DiffusionConfig: Codable, Sendable, Equatable {
     /// DiT input/output channels (256 for SFX).
     public let ioChannels: Int
@@ -158,6 +169,18 @@ public struct StableAudioModelConfig: Codable, Sendable, Equatable {
     public let condTokenDim: Int
     /// Global (adaLN) conditioning dimension (768 for SFX).
     public let globalCondDim: Int
+    /// Local-add (inpaint) conditioning channel count (`local_add_cond_dim`,
+    /// 257 for SFX = 1 inpaint mask + 256 masked-input channels).
+    public let localAddCondDim: Int
+    /// Count of learned memory tokens prepended to the sequence
+    /// (`num_memory_tokens`, 64 for SFX).
+    public let numMemoryTokens: Int
+
+    /// Per-head width, `embed_dim / num_heads` (64 for SFX).
+    public var headDim: Int { embedDim / numHeads }
+    /// GLU feed-forward inner width, `embed_dim × 4` (`ff_kwargs.mult` = 4.0 is
+    /// a family-wide constant → 4096 for SFX, 6144 for medium).
+    public var ffInner: Int { embedDim * 4 }
 
     private enum CodingKeys: String, CodingKey {
       case ioChannels = "io_channels"
@@ -166,6 +189,20 @@ public struct StableAudioModelConfig: Codable, Sendable, Equatable {
       case numHeads = "num_heads"
       case condTokenDim = "cond_token_dim"
       case globalCondDim = "global_cond_dim"
+      case localAddCondDim = "local_add_cond_dim"
+      case numMemoryTokens = "num_memory_tokens"
+    }
+
+    public init(from decoder: Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      ioChannels = try c.decode(Int.self, forKey: .ioChannels)
+      embedDim = try c.decode(Int.self, forKey: .embedDim)
+      depth = try c.decode(Int.self, forKey: .depth)
+      numHeads = try c.decode(Int.self, forKey: .numHeads)
+      condTokenDim = try c.decode(Int.self, forKey: .condTokenDim)
+      globalCondDim = try c.decode(Int.self, forKey: .globalCondDim)
+      localAddCondDim = try c.decodeIfPresent(Int.self, forKey: .localAddCondDim) ?? 257
+      numMemoryTokens = try c.decodeIfPresent(Int.self, forKey: .numMemoryTokens) ?? 64
     }
   }
 

@@ -174,4 +174,96 @@ std within 0.1, absmax within 1.0** — comfortably passed (MLX Swift and Python
 MLX share the same C++/Metal kernels, so the deltas are far below the tolerance;
 a softcap/RoPE/RMSNorm convention bug would move the probes by many units).
 
+## Sortie 8 note — DiT flow-matching pingpong sampler → latent
+
+Sortie 8 translated the DiT velocity network + the `sample_flow_pingpong`
+sampler + the `seconds_total` conditioner op-for-op into MLX Swift and wired
+`GenerationSettings.{steps,cfgScale,seed,durationSeconds}` into a deterministic
+latent. New files: `StableAudioDiT.swift`, `StableAudioConditioning.swift`,
+`StableAudioFlowSampler.swift`, `StableAudioLatentGenerator.swift`. Decoding the
+latent to audio (SAME-S) is deliberately left to Sortie 9.
+
+**DiT config source — which `DIT_CHOICES` entry.** `scripts/sa3_mlx.py::DIT_CHOICES`
+maps `"sm-sfx"` → `{"loader": "models.defs.dit_mlx", "default_decoder": "same-s"}`
+— i.e. the SFX DiT is **`dit_mlx.py`** (standard multi-head attention;
+embed_dim=1024, depth=20, heads=16, ff_inner=4096), **NOT** `dit_mlx_medium.py`
+(the differential-attention 5×-QKV `medium` DiT, embed_dim=1536/depth=24). The
+Swift DiT reads every varying hyperparameter from the loaded `model_config.json`
+`model.diffusion.config` block (`StableAudioModelConfig.DiffusionConfig`):
+`io_channels`, `embed_dim`, `depth`, `num_heads`, `cond_token_dim`,
+`global_cond_dim`, `local_add_cond_dim` (257), `num_memory_tokens` (64). Head dim
+(64 = embed_dim/num_heads) and GLU inner width (4096 = embed_dim×4, `ff_kwargs.mult`
+= 4.0) are derived; rope partial-dims (32) and the timestep Fourier dim (256) are
+the reference's family-wide constants (not scalar keys in the diffusion block).
+Nothing is hardcoded that varies between the sm and medium configs.
+
+**Weight-key mapping — maps 1:1, NO rename pass required.** Unlike the reference's
+torch-ckpt converter (`convert_weights_from_torch_ckpt`, which strips a
+`model.model.` prefix, transposes convs, renames `.gamma`→`.weight`, and
+`.to_local_embed.{0,2}`→`.seq.{0,2}`), we fetch each tensor by its **literal
+on-disk key** from the already-loaded `[String: MLXArray]` safetensors map, so no
+renaming is needed:
+
+- All DiT tensors keep the `model.model.` prefix as shipped (e.g.
+  `model.model.transformer.layers.{i}.self_attn.to_qkv.weight` `[3072,1024]`,
+  `...cross_attn.to_kv.weight` `[2048,1024]`, `...ff.ff.0.proj.weight`
+  `[8192,1024]`, `...to_scale_shift_gate` `[6144]`).
+- **RMSNorm weights are stored as `.gamma`** (e.g. `...pre_norm.gamma`,
+  `...self_attn.q_norm.gamma`); we read `.gamma` directly and feed it to
+  `MLX.rmsNorm` (weight cast to the activation dtype so the reference's
+  fp16-weight / occasionally-fp32-activation call is well-defined).
+- **1×1 convs** (`preprocess_conv.weight`/`postprocess_conv.weight`) ship
+  `[out,in,1]`; we squeeze the kernel axis to `[out,in]` and apply the conv as a
+  channel matmul (`x_lc @ W.T`) — avoiding any MLX-Conv1d `[out,k,in]` layout
+  conversion entirely.
+- **Conditioner weights** live in the *same* `model.safetensors` under
+  `conditioner.conditioners.prompt.padding_embedding` `[768]`,
+  `conditioner.conditioners.seconds_total.embedder.embedding.1.{weight,bias}`
+  `[768,256]/[768]` — not a separate `cond.`-prefixed npz as in the reference's
+  `load_conditioner_from_npz`.
+- **Dtype conversion:** the shipped tensors are **F32**; the reference's default
+  `dit_dtype=fp16` path casts the DiT weights to fp16 at load (`load_dit`). We
+  match this — DiT weights are cast **F32→fp16**; the `seconds_total` linear and
+  `padding_embedding` are kept **fp32** (the reference computes the seconds
+  conditioner in fp32 before casting the token to the sampling dtype).
+
+**Seed RNG parity (the crux).** The reference seeds via `mx.random`: the initial
+pure noise is `mx.random.normal((1,256,T_lat), dtype=fp16, key=mx.random.key(seed))`
+and the sampler is invoked with `seed = user_seed + 1`, doing
+`key = mx.random.key(seed)` then per non-terminal step
+`key, sub = mx.random.split(key); noise = mx.random.normal(x.shape, key=sub)`.
+This is translated one-for-one to `MLXRandom.key`, `MLXRandom.split(key:)` (tuple
+form → `(key, sub)`, matching the Python unpack order), and `MLXRandom.normal(_,
+dtype:, key:)` — the SAME Threefry PRNG and draw order, so the same seed
+reproduces the same noise path. `GenerationSettings.resolvedSeed` supplies the
+user seed; the sampler uses `resolvedSeed &+ 1`.
+
+**CFG.** `cfgScale → classifier-free guidance`. When `cfg == 1.0` a single DiT
+forward runs (no uncond pass). When `cfg ≠ 1.0` the cond+uncond batch is run in
+one forward over `cat([x,x])`; with no negative prompt the uncond branch uses
+**zero cross-attn embeddings** (`zeros_like(cross_attn)`, matching upstream). We
+implement plain CFG (`cfg_d = cond_d + (cfg−1)·(cond_d − uncond_d)`); the
+reference's optional APG projection is disabled (`apg ≤ 0`) since
+`GenerationSettings` exposes no APG knob.
+
+**`durationSeconds → T_lat`.** `T_lat = max(1, ceil(seconds · 44100 / 4096))`
+(`SAMPLES_PER_LATENT = 4096`), the reference's decoder-independent natural-ceil.
+`durationSeconds = 1.0 → T_lat = 11`; the produced latent is `(1, 256, T_lat)`.
+
+**Determinism (verified, model-gated).** `StableAudioLatentSamplerTests`: same
+seed → **byte-identical** latents (exact `[Float]` equality of the fp32-widened
+latent), different seeds diverge, the cfg≠1 batched-uncond path is likewise
+deterministic and differs from cfg=1. `make test`: **5/5** consecutive green
+without the model (all neural tests skip) and **10/10** consecutive green with the
+model (`TEST_RUNNER_ACERVO_MODELS_DIR=/tmp/acervo-staging`).
+
+**Observed dtype note (faithful to the reference, not a bug).** The reference's
+text-to-audio zero local-add-cond is fp32 (`mx.zeros(...)` defaults to fp32); its
+per-block MLP bias path then promotes the cfg=1 residual stream — and hence the
+returned latent — to **fp32**, while the cfg≠1 branch re-casts the velocity to
+`x.dtype` and stays **fp16**. MLX Swift's type-promotion rules are identical, so
+the Swift latent's dtype tracks the reference's exactly (S9's decoder upcasts to
+fp32 regardless). The test asserts a float dtype rather than a specific one to
+preserve this parity.
+
 <!-- Sortie 9: parity tolerance + observed delta recorded here. -->
