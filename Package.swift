@@ -56,12 +56,31 @@ let package = Package(
       "SwiftAcervo",
       remote: "https://github.com/intrusive-memory/SwiftAcervo.git",
       from: "0.24.1"),
+
+    // MLX Swift — the Stable Audio backend (WU2) translates Stability AI's
+    // official Python-MLX reference op-for-op into MLX Swift (see
+    // Sources/SwiftAmbiente/StableAudio/STRATEGY.md). It maps 1:1 to Python MLX
+    // (ops + RNG), which the Sortie 9 golden-output parity gate requires.
+    // Pinned to the exact revision the sibling `../mlx-audio-swift` package
+    // locks (0.31.3) so a single mlx-swift identity resolves across the
+    // collection graph. The open range `.upToNextMajor(from: "0.31.3")` drifts
+    // up to 0.31.6, which ships a `CudaBuild` build-tool plugin that fails
+    // xcodebuild's plugin validation on macOS; 0.31.3 predates it and builds
+    // clean, matching mlx-audio-swift's resolved version exactly.
+    .package(
+      url: "https://github.com/ml-explore/mlx-swift.git", exact: "0.31.3"),
   ],
   targets: [
     .target(
       name: "SwiftAmbiente",
       dependencies: [
         .product(name: "SwiftAcervo", package: "SwiftAcervo"),
+        // MLX Swift primitives for the Stable Audio backend (WU2): arrays/ops,
+        // NN layers, deterministic RNG (seed parity), and FFT.
+        .product(name: "MLX", package: "mlx-swift"),
+        .product(name: "MLXNN", package: "mlx-swift"),
+        .product(name: "MLXRandom", package: "mlx-swift"),
+        .product(name: "MLXFFT", package: "mlx-swift"),
       ],
       swiftSettings: [
         .enableUpcomingFeature("StrictConcurrency")
