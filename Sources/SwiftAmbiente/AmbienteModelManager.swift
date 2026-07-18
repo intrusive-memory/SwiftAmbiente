@@ -9,6 +9,7 @@
 //
 
 import Foundation
+import SwiftAcervo
 
 /// Resolves model storage and loads generation backends.
 ///
