@@ -10,8 +10,13 @@
 //  SKIP cleanly via `@Test(.enabled(if:))`. Point `ACERVO_MODELS_DIR` or
 //  `TEST_RUNNER_ACERVO_MODELS_DIR` at the staging root (e.g. `/tmp/acervo-staging`).
 //
-//  The tests READ env only (no mutation), so no `AcervoModelsDirectoryGate` is
-//  needed. The model directory is resolved directly from the fixture helper.
+//  ENV SAFETY: `.enabled(if:)` itself merely reads env (safe, lock-free), but
+//  the model-load bodies resolve the model directory and read files from disk
+//  under `withResolvedAcervoModelsDirectory` (from AcervoModelsDirectoryTestSupport),
+//  which holds the shared `AcervoModelsDirectoryGate`. Without this, a reader
+//  could observe a mutator suite's transient temp-dir value of
+//  `ACERVO_MODELS_DIR` mid-`setenv` (see `withTempAcervoModelsDirectory`),
+//  producing an intermittent wrong-directory failure.
 //
 //  PARITY: the committed fixture `Fixtures/t5gemma-encoder-reference.json` was
 //  captured from the official `optimized/mlx` T5Gemma `_Encoder` (built on the
@@ -77,20 +82,21 @@ struct T5GemmaEncoderTests {
   @Test(
     "BPE tokenizer reproduces reference SentencePiece token ids",
     .enabled(if: T5GemmaFixture.isPresent))
-  func tokenizerMatchesReference() throws {
+  func tokenizerMatchesReference() async throws {
     let fixture = try T5GemmaReferenceFixture.load()
-    let dir = try #require(T5GemmaFixture.modelDirectory)
-    let sub = dir.appendingPathComponent(
-      T5GemmaEncoderConfig.subfolderName, isDirectory: true)
-    let tokenizer = try GemmaBPETokenizer.load(
-      fromT5GemmaDirectory: sub, padTokenId: fixture.pad_token_id)
+    try await withResolvedAcervoModelsDirectory { dir in
+      let sub = dir.appendingPathComponent(
+        T5GemmaEncoderConfig.subfolderName, isDirectory: true)
+      let tokenizer = try GemmaBPETokenizer.load(
+        fromT5GemmaDirectory: sub, padTokenId: fixture.pad_token_id)
 
-    // The fixed prompt.
-    #expect(tokenizer.encode(fixture.prompt) == fixture.token_ids)
+      // The fixed prompt.
+      #expect(tokenizer.encode(fixture.prompt) == fixture.token_ids)
 
-    // Additional reference cases (single-token + multi-word).
-    for (text, expected) in fixture.tokenizer_cases {
-      #expect(tokenizer.encode(text) == expected, "tokenizer mismatch for \(text)")
+      // Additional reference cases (single-token + multi-word).
+      for (text, expected) in fixture.tokenizer_cases {
+        #expect(tokenizer.encode(text) == expected, "tokenizer mismatch for \(text)")
+      }
     }
   }
 
@@ -99,25 +105,26 @@ struct T5GemmaEncoderTests {
   @Test(
     "conditioning tensor has documented shape (1,256,768) fp16 + mask",
     .enabled(if: T5GemmaFixture.isPresent))
-  func conditioningShapeAndDtype() throws {
+  func conditioningShapeAndDtype() async throws {
     let fixture = try T5GemmaReferenceFixture.load()
-    let dir = try #require(T5GemmaFixture.modelDirectory)
-    let conditioner = try T5GemmaTextConditioner.load(fromModelDirectory: dir)
+    try await withResolvedAcervoModelsDirectory { dir in
+      let conditioner = try T5GemmaTextConditioner.load(fromModelDirectory: dir)
 
-    let cond = conditioner.encode([fixture.prompt], maxLen: fixture.max_len)
+      let cond = conditioner.encode([fixture.prompt], maxLen: fixture.max_len)
 
-    // Documented shape/dtype the DiT conditioner consumes.
-    #expect(cond.embeddings.shape == [1, fixture.max_len, 768])
-    #expect(cond.embeddings.dtype == .float16)
-    #expect(cond.mask.shape == [1, fixture.max_len])
-    #expect(cond.batch == 1)
-    #expect(cond.sequenceLength == fixture.max_len)
-    #expect(cond.hiddenSize == 768)
+      // Documented shape/dtype the DiT conditioner consumes.
+      #expect(cond.embeddings.shape == [1, fixture.max_len, 768])
+      #expect(cond.embeddings.dtype == .float16)
+      #expect(cond.mask.shape == [1, fixture.max_len])
+      #expect(cond.batch == 1)
+      #expect(cond.sequenceLength == fixture.max_len)
+      #expect(cond.hiddenSize == 768)
 
-    // Mask marks exactly the real tokens.
-    let maskVals = cond.mask.asType(.int32).asArray(Int32.self)
-    let ones = maskVals.reduce(0) { $0 + Int($1) }
-    #expect(ones == fixture.num_tokens)
+      // Mask marks exactly the real tokens.
+      let maskVals = cond.mask.asType(.int32).asArray(Int32.self)
+      let ones = maskVals.reduce(0) { $0 + Int($1) }
+      #expect(ones == fixture.num_tokens)
+    }
   }
 
   // MARK: Numerical parity vs reference encoder (fp16 tolerance)
@@ -125,58 +132,59 @@ struct T5GemmaEncoderTests {
   @Test(
     "encoder output matches reference within fp16 tolerance",
     .enabled(if: T5GemmaFixture.isPresent))
-  func encoderNumericalParity() throws {
+  func encoderNumericalParity() async throws {
     let fixture = try T5GemmaReferenceFixture.load()
-    let dir = try #require(T5GemmaFixture.modelDirectory)
-    let encoder = try T5GemmaTextEncoder.load(fromModelDirectory: dir)
+    try await withResolvedAcervoModelsDirectory { dir in
+      let encoder = try T5GemmaTextEncoder.load(fromModelDirectory: dir)
 
-    // Feed the REFERENCE token ids (isolates encoder from tokenizer).
-    let maxLen = fixture.max_len
-    var idsFlat = [Int32](repeating: Int32(fixture.pad_token_id), count: maxLen)
-    var maskFlat = [Int32](repeating: 0, count: maxLen)
-    for (j, t) in fixture.token_ids.enumerated() {
-      idsFlat[j] = Int32(t)
-      maskFlat[j] = 1
-    }
-    let ids = MLXArray(idsFlat, [1, maxLen])
-    let mask = MLXArray(maskFlat, [1, maxLen])
-
-    let out = encoder(inputIds: ids, attentionMask: mask)
-    #expect(out.shape == [1, maxLen, 768])
-    #expect(out.dtype == .float16)
-
-    // Flatten to fp32 for comparison.
-    let flat = out.asType(.float32).asArray(Float.self)  // [1*maxLen*768]
-    let hidden = 768
-    func element(_ row: Int, _ col: Int) -> Float { flat[row * hidden + col] }
-
-    // Element-level probes: a convention bug (softcap / RoPE / RMSNorm placement)
-    // moves these by many units; matching backend kernels keep them tight.
-    let elemTol: Float = 0.5
-    for c in 0..<8 {
-      #expect(abs(element(0, c) - fixture.probe_row0_col0_8[c]) < elemTol)
-      #expect(abs(element(0, 100 + c) - fixture.probe_row0_col100_108[c]) < elemTol)
-      #expect(
-        abs(element(fixture.num_tokens - 1, c) - fixture.probe_lastreal_col0_8[c]) < elemTol)
-    }
-
-    // Global stats over the real (non-pad) token rows.
-    let nz = fixture.num_tokens
-    var sum: Float = 0, sumSq: Float = 0, absMax: Float = 0
-    for r in 0..<nz {
-      for c in 0..<hidden {
-        let v = element(r, c)
-        sum += v
-        sumSq += v * v
-        absMax = max(absMax, abs(v))
+      // Feed the REFERENCE token ids (isolates encoder from tokenizer).
+      let maxLen = fixture.max_len
+      var idsFlat = [Int32](repeating: Int32(fixture.pad_token_id), count: maxLen)
+      var maskFlat = [Int32](repeating: 0, count: maxLen)
+      for (j, t) in fixture.token_ids.enumerated() {
+        idsFlat[j] = Int32(t)
+        maskFlat[j] = 1
       }
+      let ids = MLXArray(idsFlat, [1, maxLen])
+      let mask = MLXArray(maskFlat, [1, maxLen])
+
+      let out = encoder(inputIds: ids, attentionMask: mask)
+      #expect(out.shape == [1, maxLen, 768])
+      #expect(out.dtype == .float16)
+
+      // Flatten to fp32 for comparison.
+      let flat = out.asType(.float32).asArray(Float.self)  // [1*maxLen*768]
+      let hidden = 768
+      func element(_ row: Int, _ col: Int) -> Float { flat[row * hidden + col] }
+
+      // Element-level probes: a convention bug (softcap / RoPE / RMSNorm placement)
+      // moves these by many units; matching backend kernels keep them tight.
+      let elemTol: Float = 0.5
+      for c in 0..<8 {
+        #expect(abs(element(0, c) - fixture.probe_row0_col0_8[c]) < elemTol)
+        #expect(abs(element(0, 100 + c) - fixture.probe_row0_col100_108[c]) < elemTol)
+        #expect(
+          abs(element(fixture.num_tokens - 1, c) - fixture.probe_lastreal_col0_8[c]) < elemTol)
+      }
+
+      // Global stats over the real (non-pad) token rows.
+      let nz = fixture.num_tokens
+      var sum: Float = 0, sumSq: Float = 0, absMax: Float = 0
+      for r in 0..<nz {
+        for c in 0..<hidden {
+          let v = element(r, c)
+          sum += v
+          sumSq += v * v
+          absMax = max(absMax, abs(v))
+        }
+      }
+      let count = Float(nz * hidden)
+      let mean = sum / count
+      let variance = sumSq / count - mean * mean
+      let std = variance > 0 ? variance.squareRoot() : 0
+      #expect(abs(mean - fixture.real_mean) < 0.05)
+      #expect(abs(std - fixture.real_std) < 0.1)
+      #expect(abs(absMax - fixture.real_absmax) < 1.0)
     }
-    let count = Float(nz * hidden)
-    let mean = sum / count
-    let variance = sumSq / count - mean * mean
-    let std = variance > 0 ? variance.squareRoot() : 0
-    #expect(abs(mean - fixture.real_mean) < 0.05)
-    #expect(abs(std - fixture.real_std) < 0.1)
-    #expect(abs(absMax - fixture.real_absmax) < 1.0)
   }
 }

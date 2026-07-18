@@ -77,38 +77,11 @@ enum StableAudioModelFixture {
 @Suite("Stable Audio model config + asset loading", .acervoEnvironment, .serialized)
 struct StableAudioModelLoadingTests {
 
-  /// Runs `body` with `ACERVO_MODELS_DIR` pointed at the fixture's candidate
-  /// models directory for the duration of the call, serialized against every
-  /// other suite via the shared `AcervoModelsDirectoryGate`. Restores the prior
-  /// value on exit. Mirrors `withTempAcervoModelsDirectory` but targets the REAL
-  /// staging directory rather than a fresh temp dir.
-  private func withFixtureModelsDirectory<R: Sendable>(
-    _ body: @Sendable (URL) async throws -> R
-  ) async throws -> R {
-    let modelsRoot = try #require(
-      StableAudioModelFixture.candidateModelsDirectory,
-      "gate opened but no candidate models directory is set")
-    let modelDir = try #require(StableAudioModelFixture.modelDirectory)
-    return try await AcervoModelsDirectoryGate.shared.withExclusiveAccess {
-      let key = Acervo.modelsDirectoryOverrideVariable
-      let previous = ProcessInfo.processInfo.environment[key]
-      setenv(key, modelsRoot, 1)
-      defer {
-        if let previous {
-          setenv(key, previous, 1)
-        } else {
-          unsetenv(key)
-        }
-      }
-      return try await body(modelDir)
-    }
-  }
-
   @Test(
     "model_config.json parses: 44.1 kHz stereo + DiT hyperparameters",
     .enabled(if: StableAudioModelFixture.isPresent))
   func parsesModelConfig() async throws {
-    try await withFixtureModelsDirectory { modelDir in
+    try await withResolvedAcervoModelsDirectory { modelDir in
       // Prove end-to-end Acervo resolution: the manager resolves the same
       // model directory the fixture points at.
       let manager = AmbienteModelManager()
@@ -137,7 +110,7 @@ struct StableAudioModelLoadingTests {
     "model.safetensors loads with known tensor shapes",
     .enabled(if: StableAudioModelFixture.isPresent))
   func loadsWeightsWithKnownShapes() async throws {
-    try await withFixtureModelsDirectory { modelDir in
+    try await withResolvedAcervoModelsDirectory { modelDir in
       let assets = try StableAudioModelAssets.load(fromModelDirectory: modelDir)
 
       // A non-trivial weight map loaded (real model has 685 tensors).
