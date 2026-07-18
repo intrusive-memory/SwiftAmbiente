@@ -119,4 +119,59 @@ Sortie 6 parses `model_config.json` (note: **not** `config.json`) and loads
   a name/layout conversion step (matching what `optimized` did) is required.
   This is the most likely source of a silent parity failure.
 
+## Sortie 7 note — T5Gemma text encoder (translated + parity-checked)
+
+Sortie 7 translated the official `optimized/mlx/models/defs/t5gemma_mlx.py`
+encoder (`_Encoder` + `_SelfAttention`/`_MLP`/`_EncoderLayer` + `_rms_norm` /
+`_rope_cos_sin` / `_rotate_half` / `_apply_rope`) op-for-op into MLX Swift
+(`T5GemmaTextEncoder.swift`). Invocation convention (`t5.encode(...)`) was
+cross-checked against `scripts/parity_forward_mlx.py`.
+
+**Tensor-key mapping — did NOT map 1:1; a name conversion was required
+(resolving the S6 ⚠️ flag for the encoder):**
+
+- The T5Gemma weights are the encoder's *own* `t5gemma-b-b-ul2/model.safetensors`
+  (340 tensors), NOT the top-level DiT `model.safetensors`. The T5Gemma subfolder
+  is a full encoder+decoder checkpoint; **only the `model.encoder.*` half is
+  loaded** (the `model.decoder.*` half is discarded — the SFX conditioner uses
+  the encoder only).
+- The reference MLX module keys are the *stripped* names (`embed_tokens.weight`,
+  `layers.{i}.self_attn.q_proj.weight`, `layers.{i}.pre_self_attn_layernorm.weight`,
+  `norm.weight`). The shipped small-sfx safetensors carry a **`model.encoder.`
+  prefix** on every tensor. `T5GemmaWeightLoader` strips that prefix — the one
+  name conversion needed. After stripping, keys map 1:1 to the reference module
+  (same layout: Linear weights `(out,in)`, per-layer RMSNorm weights, no biases).
+- **Dtype conversion:** the shipped weights are **bf16**; the reference runs its
+  forward in **fp16** (its `_Encoder` casts the embedding to fp16 and its npz is
+  fp16). We cast bf16→fp16 at load to match the reference numeric path exactly.
+- **RoPE inv_freq** is absent from the safetensors (the reference computes it from
+  θ=10000 when its optional `rope_inv_freq` key is missing); we compute it the
+  same way in Swift, so there is no weight to map.
+
+**Conditioning output (S7 boundary).** `T5GemmaTextConditioner.encode` returns
+`(embeddings (B,256,768) fp16, mask (B,256) int32)` — the encoder last-hidden
+state + attention mask, matching the reference `T5Gemma.encode`. The learned
+padding-embedding substitution (`apply_prompt_padding`), the `seconds_total`
+token, and the cross-cat that build the DiT's *final* cross-conditioning use the
+**DiT base** weights (`cond.prompt.padding_embedding`), not the T5Gemma weights —
+that is Sortie 8, deliberately not applied here.
+
+**Tokenizer.** The reference uses `sentencepiece` on `tokenizer.model`. To avoid
+adding a package dependency (swift-transformers is not in this graph; adding it
+mid-mission risks the pinned mlx-swift 0.31.3 resolution), `GemmaBPETokenizer`
+reads `tokenizer.json` directly and implements the equivalent byte-fallback BPE
+(space→"▁" normalizer, no dummy prefix). Verified to reproduce
+`sentencepiece.Encode` exactly on the committed reference cases.
+
+**Numerical parity (achieved).** The committed fixture
+`Tests/SwiftAmbienteTests/Fixtures/t5gemma-encoder-reference.json` was captured
+from the reference `_Encoder` (same safetensors, bf16→fp16) for the fixed prompt
+`"gentle rain on a tin roof"` → ids `[116419,8980,611,476,10689,11306]`, output
+`(1,256,768)` fp16 (real-token mean −0.0137, std 3.925, absmax 50.25). The Swift
+encoder, fed the reference token ids, matches within **abs tolerance 0.5 per fp16
+element** (probes at rows 0/last, cols 0–7 and 100–107) and **mean within 0.05,
+std within 0.1, absmax within 1.0** — comfortably passed (MLX Swift and Python
+MLX share the same C++/Metal kernels, so the deltas are far below the tolerance;
+a softcap/RoPE/RMSNorm convention bug would move the probes by many units).
+
 <!-- Sortie 9: parity tolerance + observed delta recorded here. -->
