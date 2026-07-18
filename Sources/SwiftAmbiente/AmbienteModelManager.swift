@@ -57,18 +57,93 @@ public actor AmbienteModelManager {
 
   /// Load the MLX Stable Audio generator for the given model.
   ///
-  /// - Important: Not yet implemented. The MLX Stable Audio 3 Small port does not
-  ///   exist as a Swift library; until it does, callers should fall back to
+  /// Downloads the model on first use via Acervo's on-demand component
+  /// access pattern (mirroring `VoxAltaModelManager`'s v2 access pattern:
+  /// `Acervo.ensureComponentReady` followed by
+  /// `AcervoManager.shared.withComponentAccess` for file-presence/checksum
+  /// validation), then hands off to the WU2 construction seam below.
+  ///
+  /// - Important: The MLX Stable Audio 3 Small port does not exist as a Swift
+  ///   library yet; until WU2 Sortie 10 lands, this always throws
+  ///   `AmbienteError.modelNotAvailable("backend not yet implemented")` after
+  ///   a successful ensure/access, so callers fall back to
   ///   ``ProceduralAmbienteGenerator``. See
   ///   `REQUIREMENTS-stable-audio-integration.md` for the integration plan.
   public func loadGenerator(_ repo: StableAudioModelRepo) async throws -> any AmbienteGenerator {
-    // TODO(stable-audio): construct and return the MLX Stable Audio generator.
-    // TODO(acervo): wire on-demand download via `Acervo.ensureComponentReady` /
-    //   `withComponentAccess` (mirroring VoxAltaModelManager's v2 access
-    //   pattern). Directory resolution and installation checks above already
-    //   delegate to SwiftAcervo.
-    throw AmbienteError.modelNotAvailable(
-      "\(repo.rawValue) — MLX Stable Audio backend is not yet wired. "
-        + "Use ProceduralAmbienteGenerator for now.")
+    let componentId = repo.componentId
+
+    do {
+      // Step 1: Ensure the model's files are downloaded via the Acervo
+      // Component Registry (downloads on first use; no-ops if the component
+      // is already present and verified).
+      try await Acervo.ensureComponentReady(componentId)
+
+      // Step 2: Validate file presence and checksums via the v2 access
+      // pattern. `withComponentAccess`'s closure is synchronous, so it is
+      // used purely to trigger SwiftAcervo's validation on entry — mirrors
+      // `VoxAltaModelManager._loadModelWithComponentValidation`.
+      try await AcervoManager.shared.withComponentAccess(componentId) { @Sendable _ in
+        ()
+      }
+    } catch let error as AcervoError {
+      throw Self.mapAcervoError(error, repo: repo)
+    } catch {
+      throw AmbienteError.modelNotAvailable(
+        "\(repo.rawValue) — failed to prepare model: \(error.localizedDescription)")
+    }
+
+    // WU2 construction seam: WU2 Sortie 10 replaces this throw with
+    // `return StableAudioGenerator(componentId: componentId, ...)`, composing
+    // the config/encoder/sampler/decoder pipeline built in Sorties 6–9. Until
+    // then the model is downloaded and verified but no Swift decoder exists,
+    // so `AmbienteEngine.resolveGenerator` still falls back to
+    // `ProceduralAmbienteGenerator`.
+    throw AmbienteError.modelNotAvailable("backend not yet implemented")
+  }
+
+  /// Maps a SwiftAcervo error surfaced during `ensureComponentReady` /
+  /// `withComponentAccess` onto an `AmbienteError` with an actionable,
+  /// model-scoped message. Mirrors the `AcervoError` switch in
+  /// `VoxAltaModelManager._loadModelWithComponentValidation`.
+  private static func mapAcervoError(
+    _ error: AcervoError, repo: StableAudioModelRepo
+  ) -> AmbienteError {
+    switch error {
+    case .integrityCheckFailed(let file, let expected, let actual):
+      return .modelNotAvailable(
+        "\(repo.rawValue) — file '\(file)' failed SHA-256 verification "
+          + "(expected \(expected), got \(actual)); re-download required")
+    case .downloadSizeMismatch(let fileName, let expected, let actual):
+      return .modelNotAvailable(
+        "\(repo.rawValue) — file '\(fileName)' size mismatch "
+          + "(expected \(expected) bytes, got \(actual) bytes)")
+    case .manifestDownloadFailed(let statusCode):
+      return .modelNotAvailable(
+        "\(repo.rawValue) — CDN manifest download failed (HTTP \(statusCode))")
+    case .manifestFetchFailed(let slug, let status):
+      return .modelNotAvailable(
+        "\(repo.rawValue) — CDN manifest fetch failed for slug '\(slug)' (HTTP \(status))")
+    case .manifestIntegrityFailed(let expected, let actual):
+      return .modelNotAvailable(
+        "\(repo.rawValue) — CDN manifest checksum mismatch "
+          + "(expected \(expected), got \(actual)); CDN copy may be corrupt")
+    case .modelNotFound(let id):
+      return .modelNotAvailable("Model '\(id)' not found on CDN")
+    case .componentNotRegistered(let id):
+      return .modelNotAvailable(
+        "Unknown component '\(id)' (internal bug: forgot to register?)")
+    case .componentNotDownloaded(let id):
+      return .modelNotAvailable("Component '\(id)' is not yet downloaded")
+    case .componentNotHydrated(let id):
+      return .modelNotAvailable("Component '\(id)' needs hydration before sync inspection")
+    case .componentFileNotFound(let component, let file):
+      return .modelNotAvailable("File '\(file)' not found in component '\(component)'")
+    case .offlineModeActive:
+      return .modelNotAvailable(
+        "ACERVO_OFFLINE=1 — refusing CDN fetch; model not present locally")
+    default:
+      return .generationFailed(
+        "SwiftAcervo error preparing \(repo.rawValue): \(error.localizedDescription)")
+    }
   }
 }
