@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import SwiftAcervo
 
 /// Stable Audio model variants SwiftAmbiente generates against.
 ///
@@ -46,3 +47,52 @@ public enum StableAudioModelRepo: String, CaseIterable, Sendable {
   /// The slugs accepted by the `--model` flag.
   public static var supportedSlugs: [String] { allCases.map(\.slug) }
 }
+
+// MARK: - Acervo Component Registration
+
+extension StableAudioModelRepo {
+  /// The Acervo component ID for this model variant.
+  ///
+  /// Equal to `Acervo.slugify(rawValue)`, which is also the CDN slug under
+  /// which the model's manifest is served. Keeping component ID ==
+  /// slugified repo ID == CDN slug eliminates triple-naming, mirroring the
+  /// `Qwen3TTSModelRepo.componentId` convention in SwiftVoxAlta.
+  public var componentId: String {
+    Acervo.slugify(rawValue)
+  }
+}
+
+/// Bare component descriptors for the SFX and music Stable Audio variants.
+///
+/// No `files:` or `estimatedSizeBytes:` declared — SwiftAcervo auto-hydrates
+/// each one from the CDN manifest on first call to `ensureComponentReady`, so
+/// the file list and total size are always whatever the published manifest
+/// says, never a stale local mirror. `minimumMemoryBytes` is a conservative
+/// estimate for the 0.6B-parameter Small variant; refine once real manifests
+/// are published (WU3).
+let stableAudioComponentDescriptors: [ComponentDescriptor] = [
+  ComponentDescriptor(
+    id: StableAudioModelRepo.smallSFX.componentId,
+    type: .backbone,
+    displayName: "Stable Audio 3 Small — SFX",
+    repoId: StableAudioModelRepo.smallSFX.rawValue,
+    minimumMemoryBytes: 1_500_000_000
+  ),
+  ComponentDescriptor(
+    id: StableAudioModelRepo.smallMusic.componentId,
+    type: .backbone,
+    displayName: "Stable Audio 3 Small — Music",
+    repoId: StableAudioModelRepo.smallMusic.rawValue,
+    minimumMemoryBytes: 1_500_000_000
+  ),
+]
+
+/// Module-level registration trigger.
+///
+/// Evaluated once (lazily) on first access, registering both Stable Audio
+/// component descriptors with the SwiftAcervo Component Registry.
+/// `AmbienteModelManager.init()` references this to ensure registration
+/// happens before any model loading or download call.
+let registerStableAudioComponents: Void = {
+  Acervo.register(stableAudioComponentDescriptors)
+}()
