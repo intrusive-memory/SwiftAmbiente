@@ -15,42 +15,20 @@ import Testing
 
 @testable import SwiftAmbiente
 
-@Suite("AmbienteModelManager — Acervo delegation", .serialized)
+@Suite("AmbienteModelManager — Acervo delegation", .acervoEnvironment, .serialized)
 struct AmbienteModelManagerTests {
 
-  /// Snapshots and restores `ACERVO_MODELS_DIR` around `body`, pointing it at
-  /// a freshly created empty temp directory (as a raw path string) for the
-  /// duration of the call. Restores the prior value on exit (including on
-  /// throw) so other tests in the (possibly parallel) suite see a clean
-  /// slate. Hands `body` the raw path string rather than a `URL` so callers
-  /// can reconstruct the expected `URL` exactly the way SwiftAcervo does
-  /// internally (`URL(fileURLWithPath:isDirectory:)`), matching the
-  /// convention in SwiftAcervo's own `AcervoPathTests`.
-  private func withTempAcervoModelsDirectory<R>(
-    _ body: (String) async throws -> R
-  ) async rethrows -> R {
-    let key = Acervo.modelsDirectoryOverrideVariable
-    let previous = ProcessInfo.processInfo.environment[key]
-    let tempPath = FileManager.default.temporaryDirectory
-      .appendingPathComponent("AmbienteModelManagerTests-\(UUID().uuidString)", isDirectory: true)
-      .path
-    try? FileManager.default.createDirectory(
-      atPath: tempPath, withIntermediateDirectories: true)
-    setenv(key, tempPath, 1)
-    defer {
-      if let previous {
-        setenv(key, previous, 1)
-      } else {
-        unsetenv(key)
-      }
-      try? FileManager.default.removeItem(atPath: tempPath)
-    }
-    return try await body(tempPath)
-  }
+  // `withTempAcervoModelsDirectory` (shared, cross-suite-serialized via
+  // `AcervoModelsDirectoryGate`) lives in
+  // AcervoModelsDirectoryTestSupport.swift. Hands `body` the raw path
+  // string rather than a `URL` so callers can reconstruct the expected
+  // `URL` exactly the way SwiftAcervo does internally
+  // (`URL(fileURLWithPath:isDirectory:)`), matching the convention in
+  // SwiftAcervo's own `AcervoPathTests`.
 
   @Test("isModelInstalled returns false for an absent model, delegating to Acervo")
   func isModelInstalledFalseForAbsentModel() async throws {
-    try await withTempAcervoModelsDirectory { tempPath in
+    try await withTempAcervoModelsDirectory(prefix: "AmbienteModelManagerTests") { tempPath in
       // sharedModelsDirectory must reflect the ACERVO_MODELS_DIR override —
       // proof that directory resolution now goes through Acervo, not a
       // hand-rolled ~/Library/SharedModels default.
@@ -67,7 +45,7 @@ struct AmbienteModelManagerTests {
 
   @Test("modelDirectory(for:) resolves under the Acervo-provided shared directory")
   func modelDirectoryResolvesUnderAcervoOverride() async throws {
-    try await withTempAcervoModelsDirectory { tempPath in
+    try await withTempAcervoModelsDirectory(prefix: "AmbienteModelManagerTests") { tempPath in
       let manager = AmbienteModelManager()
       let dir = await manager.modelDirectory(for: .smallSFX)
       let expected = URL(fileURLWithPath: tempPath, isDirectory: true)

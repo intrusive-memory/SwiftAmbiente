@@ -19,37 +19,17 @@ import Testing
 
 @testable import SwiftAmbiente
 
-@Suite("AmbienteEngine — procedural fallback", .serialized)
+@Suite("AmbienteEngine — procedural fallback", .acervoEnvironment, .serialized)
 struct AmbienteEngineTests {
 
-  /// Snapshots and restores `ACERVO_MODELS_DIR` around `body`, pointing it at
-  /// a freshly created empty temp directory for the duration of the call.
-  /// Mirrors `AmbienteModelManagerTests.withTempAcervoModelsDirectory`.
-  private func withTempAcervoModelsDirectory<R>(
-    _ body: () async throws -> R
-  ) async rethrows -> R {
-    let key = Acervo.modelsDirectoryOverrideVariable
-    let previous = ProcessInfo.processInfo.environment[key]
-    let tempPath = FileManager.default.temporaryDirectory
-      .appendingPathComponent("AmbienteEngineTests-\(UUID().uuidString)", isDirectory: true)
-      .path
-    try? FileManager.default.createDirectory(
-      atPath: tempPath, withIntermediateDirectories: true)
-    setenv(key, tempPath, 1)
-    defer {
-      if let previous {
-        setenv(key, previous, 1)
-      } else {
-        unsetenv(key)
-      }
-      try? FileManager.default.removeItem(atPath: tempPath)
-    }
-    return try await body()
-  }
+  // `withTempAcervoModelsDirectory` (shared, cross-suite-serialized via
+  // `AcervoModelsDirectoryGate`) lives in
+  // AcervoModelsDirectoryTestSupport.swift. Mirrors
+  // `AmbienteModelManagerTests`'s use of the same shared helper.
 
   @Test("resolveGenerator returns the procedural generator when no model is installed")
   func resolveGeneratorFallsBackToProceduralWhenModelAbsent() async throws {
-    try await withTempAcervoModelsDirectory {
+    try await withTempAcervoModelsDirectory(prefix: "AmbienteEngineTests") { _ in
       let engine = AmbienteEngine()
       let generator = await engine.resolveGenerator(model: .smallSFX)
       #expect(generator.generatorId == "procedural")
