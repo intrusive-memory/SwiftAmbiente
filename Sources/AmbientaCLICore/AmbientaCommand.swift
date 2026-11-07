@@ -19,8 +19,9 @@ public struct AmbientaCommand: AsyncParsableCommand {
     abstract: "Generate atmospheric / foley background beds for your scene.",
     discussion: """
       Renders a background audio bed from a free-form prompt or a built-in scene
-      preset. The shipping engine is a procedural (filtered-noise) generator; the
-      neural Stable Audio backend is staged (see REQUIREMENTS-stable-audio-integration.md).
+      preset. Uses the Stable Audio 3 Small SFX neural backend when its model is
+      installed, otherwise a procedural (filtered-noise) generator. Override the
+      model CDN with ACERVO_CDN_BASE_URL.
       """,
     version: "ambienta \(AmbientaVersion.current)"
   )
@@ -75,12 +76,13 @@ public struct AmbientaCommand: AsyncParsableCommand {
     let repo = try resolveModel()
     let prompt = try resolvePrompt()
 
+    Self.applyDefaultCDNBaseURL()
     let engine = AmbienteEngine()
-    let wavData = try await engine.render(
+    let generator = await engine.resolveGenerator(model: repo)
+    FileHandle.standardError.write(Data("generator: \(generator.generatorId)\n".utf8))
+    let wavData = try await generator.generate(
       prompt: prompt,
-      duration: duration,
-      seed: seed,
-      model: repo
+      settings: GenerationSettings(durationSeconds: duration, seed: seed)
     )
 
     let outputPath = output ?? "./ambiente.wav"
@@ -91,6 +93,17 @@ public struct AmbientaCommand: AsyncParsableCommand {
     FileHandle.standardError.write(
       Data(
         "Wrote \(String(format: "%.1f", duration))s bed (\(bytes) bytes) to \(outputPath)\n".utf8))
+  }
+
+  // MARK: - CDN Configuration
+
+  /// Default model CDN for the CLI. SwiftAcervo has no built-in default (it
+  /// `fatalError`s when unset), so the consuming executable supplies one. An
+  /// explicitly set `ACERVO_CDN_BASE_URL` always wins (`overwrite = 0`).
+  static let defaultCDNBaseURL = "https://cdn.intrusive-memory.productions/models"
+
+  static func applyDefaultCDNBaseURL() {
+    setenv("ACERVO_CDN_BASE_URL", defaultCDNBaseURL, 0)
   }
 
   // MARK: - Resolution Helpers

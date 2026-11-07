@@ -34,6 +34,10 @@ bin/
 *.wav
 ambiente.wav
 
+# ...but golden-output test fixtures ARE tracked (Sortie 4 parity oracle).
+!Tests/Fixtures/
+!Tests/Fixtures/**
+
 # Environment
 .env
 .env.*

@@ -48,7 +48,8 @@ jobs:
       - name: Verify binary exists
         run: |
           test -f ./bin/ambienta
-          echo "Binary verified."
+          test -d ./bin/mlx-swift_Cmlx.bundle
+          echo "Binary and Metal bundle verified."
 
       - name: Package tarball
         id: package
@@ -56,7 +57,7 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
           TARBALL="ambienta-${VERSION}-arm64-macos.tar.gz"
           cd bin
-          tar czf "../${TARBALL}" ambienta
+          tar czf "../${TARBALL}" ambienta mlx-swift_Cmlx.bundle
           cd ..
           echo "tarball=$TARBALL" >> "$GITHUB_OUTPUT"
           echo "Packaged: $TARBALL"

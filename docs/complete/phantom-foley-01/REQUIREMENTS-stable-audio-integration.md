@@ -1,5 +1,8 @@
 ---
-type: project
+type: requirements
+state: completed
+updated: 2026-11-07
+mission: phantom-foley-01
 ---
 
 # REQUIREMENTS — Stable Audio backend integration
