@@ -18,7 +18,7 @@ This file is preserved as a stub so existing links don't 404.
 - Initial scaffold mirroring SwiftVoxAlta conventions.
 - `AmbienteGenerator` backend abstraction.
 - `ProceduralAmbienteGenerator` — interim, dependency-free filtered-noise engine.
-- `ambienta` CLI with scene presets and free-form prompts.
+- `ambiente` CLI with scene presets and free-form prompts.
 - Stable Audio 3 Small SFX neural backend (`StableAudioGenerator`, MLX Swift):
   T5Gemma conditioning, DiT flow-matching sampler with APG, SAME-S decoder;
   golden-output parity gate; on-demand model download via SwiftAcervo;

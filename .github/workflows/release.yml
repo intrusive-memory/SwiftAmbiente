@@ -14,8 +14,8 @@ permissions:
   contents: write
 
 env:
-  BINARY_NAME: ambienta
-  SCHEME: ambienta
+  BINARY_NAME: ambiente
+  SCHEME: ambiente
 
 jobs:
   build-and-release:
@@ -47,7 +47,7 @@ jobs:
 
       - name: Verify binary exists
         run: |
-          test -f ./bin/ambienta
+          test -f ./bin/ambiente
           test -d ./bin/mlx-swift_Cmlx.bundle
           echo "Binary and Metal bundle verified."
 
@@ -55,9 +55,9 @@ jobs:
         id: package
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          TARBALL="ambienta-${VERSION}-arm64-macos.tar.gz"
+          TARBALL="ambiente-${VERSION}-arm64-macos.tar.gz"
           cd bin
-          tar czf "../${TARBALL}" ambienta mlx-swift_Cmlx.bundle
+          tar czf "../${TARBALL}" ambiente mlx-swift_Cmlx.bundle
           cd ..
           echo "tarball=$TARBALL" >> "$GITHUB_OUTPUT"
           echo "Packaged: $TARBALL"
@@ -84,7 +84,7 @@ jobs:
         if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v7
         with:
-          name: ambienta-release
+          name: ambiente-release
           path: |
             ${{ steps.package.outputs.tarball }}
             ${{ steps.package.outputs.tarball }}.sha256

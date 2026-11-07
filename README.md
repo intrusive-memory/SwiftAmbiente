@@ -49,12 +49,12 @@ and falls back to the procedural generator otherwise, so you always get a result
 ## CLI
 
 ```bash
-make install                       # builds ./bin/ambienta
+make install                       # builds ./bin/ambiente
 
-ambienta --list-scenes             # show built-in presets
-ambienta --scene rain -d 30 -o rain.wav
-ambienta "quiet café murmur, distant traffic" -d 15 -o cafe.wav
-ambienta --scene forest --seed 42  # reproducible; writes ./ambiente.wav
+ambiente --list-scenes             # show built-in presets
+ambiente --scene rain -d 30 -o rain.wav
+ambiente "quiet café murmur, distant traffic" -d 15 -o cafe.wav
+ambiente --scene forest --seed 42  # reproducible; writes ./ambiente.wav
 ```
 
 ## Architecture
@@ -157,7 +157,7 @@ resolve them:
 To use the neural backend, an app embedding the library must set the CDN base
 URL, either as the `ACERVO_CDN_BASE_URL` environment variable or the
 `AcervoCDNBaseURL` Info.plist key. SwiftAcervo traps without one of them. The
-`ambienta` CLI ships a default (`https://cdn.intrusive-memory.productions/models`).
+`ambiente` CLI ships a default (`https://cdn.intrusive-memory.productions/models`).
 If the model is not installed, `AmbienteEngine` falls back to the procedural
 generator.
 

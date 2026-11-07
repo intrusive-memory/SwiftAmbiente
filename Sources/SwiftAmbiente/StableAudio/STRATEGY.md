@@ -481,7 +481,7 @@ translation was faithful — the *oracle* was wrong, and the S9 gate faithfully
 matched Swift to it. Found only when a human listened to rendered beds.
 
 **Fix.**
-- `GenerationSettings.cfgScale` default → 1.0; `ambienta` gains `--cfg`
+- `GenerationSettings.cfgScale` default → 1.0; `ambiente` gains `--cfg`
   (default 1.0) and `--steps` (default 8).
 - Golden fixture re-recorded at cfg 1.0 on the same reference commit and mlx
   0.32.0 venv (which first re-produced the old cfg 7.0 MD5 byte-for-byte).

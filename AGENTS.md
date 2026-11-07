@@ -25,7 +25,7 @@ Never `swift build` / `swift test`. Use the Makefile (xcodebuild under the hood)
 
 ```bash
 make build        # debug build
-make install      # build + copy ./bin/ambienta
+make install      # build + copy ./bin/ambiente
 make test         # unit tests (no model required)
 make help
 ```
@@ -60,20 +60,20 @@ honour `durationSeconds` and `seed` so output is reproducible across backends;
 installed and loadable (`StableAudioGenerator`, `generatorId == "stable-audio"`),
 otherwise the procedural generator (and logs the fallback to stderr). Loading goes
 through SwiftAcervo, which **traps** unless the host process sets
-`ACERVO_CDN_BASE_URL` (env) or `AcervoCDNBaseURL` (Info.plist); the `ambienta` CLI
+`ACERVO_CDN_BASE_URL` (env) or `AcervoCDNBaseURL` (Info.plist); the `ambiente` CLI
 sets a default, the library deliberately does not. MLX executables must ship
 `mlx-swift_Cmlx.bundle` next to the binary (`make install`/`make release` do).
 Model-present tests run with `TEST_RUNNER_ACERVO_MODELS_DIR=<dir>` (the xctest
 runner can't read the App Group container).
 
-## CLI — `ambienta`
+## CLI — `ambiente`
 
 ```bash
-ambienta --list-scenes
-ambienta --scene rain -d 30 -o rain.wav
-ambienta "distant city traffic, muffled hum" -d 15 -o city.wav
-ambienta --scene forest --seed 42            # reproducible → ./ambiente.wav
-ambienta --model sfx --scene ocean -d 60 -o ocean.wav
+ambiente --list-scenes
+ambiente --scene rain -d 30 -o rain.wav
+ambiente "distant city traffic, muffled hum" -d 15 -o city.wav
+ambiente --scene forest --seed 42            # reproducible → ./ambiente.wav
+ambiente --model sfx --scene ocean -d 60 -o ocean.wav
 ```
 
 Scene presets: `room-tone`, `rain`, `forest`, `city`, `ocean`, `cafe`, `night`.
@@ -102,7 +102,7 @@ neural backend runs. Authoritative summary: README "Licensing" and `NOTICE`.
 ## Recent Changes
 
 ### 0.1.0-dev
-- Initial scaffold: backend abstraction, procedural generator, `ambienta` CLI,
+- Initial scaffold: backend abstraction, procedural generator, `ambiente` CLI,
   scene presets.
 - Stable Audio 3 Small SFX neural backend (`StableAudioGenerator`, MLX Swift) with
   golden-output parity gate, SwiftAcervo on-demand download, model-gated
