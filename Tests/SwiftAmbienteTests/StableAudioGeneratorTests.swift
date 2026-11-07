@@ -44,7 +44,8 @@ struct StableAudioGeneratorTests {
   @Test("rejects a non-44.1 kHz-stereo config")
   func rejectsUnsupportedConfig() async {
     let g = StableAudioGenerator(
-      modelDirectory: Self.bogusDir, config: AmbienteConfig(
+      modelDirectory: Self.bogusDir,
+      config: AmbienteConfig(
         generatorModel: AmbienteConfig.default.generatorModel, sampleRate: 22_050,
         channelCount: 1, outputFormat: .wav))
     await #expect(throws: AmbienteError.self) {

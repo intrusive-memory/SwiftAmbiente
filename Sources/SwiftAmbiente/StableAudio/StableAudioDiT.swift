@@ -75,44 +75,44 @@ public struct StableAudioDiTConfig: Sendable, Equatable {
 
 /// One transformer block's weights, cast to fp16.
 struct StableAudioDiTLayerWeights {
-  let preNorm: MLXArray            // (E,)
-  let selfToQKV: MLXArray          // (3E, E)
-  let selfToOut: MLXArray          // (E, E)
-  let selfQNorm: MLXArray          // (D,)
-  let selfKNorm: MLXArray          // (D,)
-  let crossAttendNorm: MLXArray    // (E,)
-  let crossToQ: MLXArray           // (E, E)
-  let crossToKV: MLXArray          // (2E, E)
-  let crossToOut: MLXArray         // (E, E)
-  let crossQNorm: MLXArray         // (D,)
-  let crossKNorm: MLXArray         // (D,)
-  let ffNorm: MLXArray             // (E,)
-  let ffProjW: MLXArray            // (2*ffInner, E)
-  let ffProjB: MLXArray            // (2*ffInner,)
-  let ffOutW: MLXArray             // (E, ffInner)
-  let ffOutB: MLXArray             // (E,)
-  let toScaleShiftGate: MLXArray   // (6E,)
-  let localEmbed0W: MLXArray       // (E, localAddCondDim)
-  let localEmbed0B: MLXArray       // (E,)
-  let localEmbed2W: MLXArray       // (E, E)
-  let localEmbed2B: MLXArray       // (E,)
+  let preNorm: MLXArray  // (E,)
+  let selfToQKV: MLXArray  // (3E, E)
+  let selfToOut: MLXArray  // (E, E)
+  let selfQNorm: MLXArray  // (D,)
+  let selfKNorm: MLXArray  // (D,)
+  let crossAttendNorm: MLXArray  // (E,)
+  let crossToQ: MLXArray  // (E, E)
+  let crossToKV: MLXArray  // (2E, E)
+  let crossToOut: MLXArray  // (E, E)
+  let crossQNorm: MLXArray  // (D,)
+  let crossKNorm: MLXArray  // (D,)
+  let ffNorm: MLXArray  // (E,)
+  let ffProjW: MLXArray  // (2*ffInner, E)
+  let ffProjB: MLXArray  // (2*ffInner,)
+  let ffOutW: MLXArray  // (E, ffInner)
+  let ffOutB: MLXArray  // (E,)
+  let toScaleShiftGate: MLXArray  // (6E,)
+  let localEmbed0W: MLXArray  // (E, localAddCondDim)
+  let localEmbed0B: MLXArray  // (E,)
+  let localEmbed2W: MLXArray  // (E, E)
+  let localEmbed2B: MLXArray  // (E,)
 }
 
 /// Full DiT weight set, cast to fp16.
 struct StableAudioDiTWeights {
-  let preprocessConv: MLXArray     // (io, 1, io) — MLX conv1d layout [out, k, in]
-  let postprocessConv: MLXArray    // (io, 1, io)
-  let toCondEmbed0: MLXArray       // (E, condTokenDim)
-  let toCondEmbed2: MLXArray       // (E, E)
-  let toGlobalEmbed0: MLXArray     // (E, globalCondDim)
-  let toGlobalEmbed2: MLXArray     // (E, E)
+  let preprocessConv: MLXArray  // (io, 1, io) — MLX conv1d layout [out, k, in]
+  let postprocessConv: MLXArray  // (io, 1, io)
+  let toCondEmbed0: MLXArray  // (E, condTokenDim)
+  let toCondEmbed2: MLXArray  // (E, E)
+  let toGlobalEmbed0: MLXArray  // (E, globalCondDim)
+  let toGlobalEmbed2: MLXArray  // (E, E)
   let toTimestepEmbed0W: MLXArray  // (E, timestepFeatDim)
   let toTimestepEmbed0B: MLXArray  // (E,)
   let toTimestepEmbed2W: MLXArray  // (E, E)
   let toTimestepEmbed2B: MLXArray  // (E,)
-  let projectIn: MLXArray          // (E, io)
-  let projectOut: MLXArray         // (io, E)
-  let memoryTokens: MLXArray       // (numMem, E)
+  let projectIn: MLXArray  // (E, io)
+  let projectOut: MLXArray  // (io, E)
+  let memoryTokens: MLXArray  // (numMem, E)
   let globalCondEmbed0W: MLXArray  // (E, E)
   let globalCondEmbed0B: MLXArray  // (E,)
   let globalCondEmbed2W: MLXArray  // (6E, E)
@@ -231,7 +231,8 @@ public final class StableAudioDiT {
   static func expoFourierFreqs(dim: Int, minFreq: Double, maxFreq: Double) -> MLXArray {
     let half = dim / 2
     let ramp = MLXArray.linspace(Float(0.0), Float(1.0), count: half)
-    let logMin = Foundation.log(minFreq), logMax = Foundation.log(maxFreq)
+    let logMin = Foundation.log(minFreq)
+    let logMax = Foundation.log(maxFreq)
     let freqs = MLX.exp(ramp * Float(logMax - logMin) + Float(logMin))
     let out = (freqs * Float(2)) * Float(Double.pi)
     MLX.eval(out)
@@ -266,12 +267,14 @@ public final class StableAudioDiT {
 
   private func selfAttention(_ x: MLXArray, layer: StableAudioDiTLayerWeights) -> MLXArray {
     let s = x.shape
-    let B = s[0], T = s[1]
-    let H = config.numHeads, D = config.headDim
+    let B = s[0]
+    let T = s[1]
+    let H = config.numHeads
+    let D = config.headDim
     let scale = powf(Float(D), -0.5)
 
-    let qkv = linear(x, layer.selfToQKV)          // (B, T, 3E)
-    let parts = qkv.split(parts: 3, axis: -1)     // 3 × (B, T, E)
+    let qkv = linear(x, layer.selfToQKV)  // (B, T, 3E)
+    let parts = qkv.split(parts: 3, axis: -1)  // 3 × (B, T, E)
     func toHeads(_ t: MLXArray) -> MLXArray {
       t.reshaped([B, T, H, D]).transposed(0, 2, 1, 3)  // (B, H, T, D)
     }
@@ -280,10 +283,12 @@ public final class StableAudioDiT {
     let vv = toHeads(parts[2])
     q = rmsNorm(q, layer.selfQNorm, eps: config.qkNormEps)
     k = rmsNorm(k, layer.selfKNorm, eps: config.qkNormEps)
-    q = MLX.RoPE(q, dimensions: config.ropeDims, traditional: false, base: 10000.0, scale: 1.0, offset: 0)
-    k = MLX.RoPE(k, dimensions: config.ropeDims, traditional: false, base: 10000.0, scale: 1.0, offset: 0)
+    q = MLX.RoPE(
+      q, dimensions: config.ropeDims, traditional: false, base: 10000.0, scale: 1.0, offset: 0)
+    k = MLX.RoPE(
+      k, dimensions: config.ropeDims, traditional: false, base: 10000.0, scale: 1.0, offset: 0)
 
-    let out = sdpa(q, k, vv, scale: scale)        // (B, H, T, D)
+    let out = sdpa(q, k, vv, scale: scale)  // (B, H, T, D)
     let merged = out.transposed(0, 2, 1, 3).reshaped([B, T, config.embedDim])
     return linear(merged, layer.selfToOut)
   }
@@ -292,14 +297,16 @@ public final class StableAudioDiT {
     -> MLXArray
   {
     let sx = x.shape
-    let B = sx[0], Tx = sx[1]
+    let B = sx[0]
+    let Tx = sx[1]
     let Tc = context.shape[1]
-    let H = config.numHeads, D = config.headDim
+    let H = config.numHeads
+    let D = config.headDim
     let scale = powf(Float(D), -0.5)
 
-    let q0 = linear(x, layer.crossToQ)            // (B, Tx, E)
-    let kv = linear(context, layer.crossToKV)     // (B, Tc, 2E)
-    let kvParts = kv.split(parts: 2, axis: -1)    // 2 × (B, Tc, E)
+    let q0 = linear(x, layer.crossToQ)  // (B, Tx, E)
+    let kv = linear(context, layer.crossToKV)  // (B, Tc, 2E)
+    let kvParts = kv.split(parts: 2, axis: -1)  // 2 × (B, Tc, E)
     var q = q0.reshaped([B, Tx, H, D]).transposed(0, 2, 1, 3)
     var k = kvParts[0].reshaped([B, Tc, H, D]).transposed(0, 2, 1, 3)
     let vv = kvParts[1].reshaped([B, Tc, H, D]).transposed(0, 2, 1, 3)
@@ -313,7 +320,7 @@ public final class StableAudioDiT {
 
   /// GLU feed-forward: proj → split → `x * silu(gate)` → out.
   private func feedForward(_ x: MLXArray, layer: StableAudioDiTLayerWeights) -> MLXArray {
-    let p = linear(x, layer.ffProjW, layer.ffProjB)   // (B, T, 2*ffInner)
+    let p = linear(x, layer.ffProjW, layer.ffProjB)  // (B, T, 2*ffInner)
     let parts = p.split(parts: 2, axis: -1)
     let gated = parts[0] * MLXNN.silu(parts[1])
     return linear(gated, layer.ffOutW, layer.ffOutB)
@@ -335,8 +342,12 @@ public final class StableAudioDiT {
     // ss = (to_scale_shift_gate + global_cond)[:, None, :] → split 6
     let ss = (layer.toScaleShiftGate + globalCond).expandedDimensions(axis: 1)  // (B,1,6E)
     let ssParts = ss.split(parts: 6, axis: -1)
-    let scaleSelf = ssParts[0], shiftSelf = ssParts[1], gateSelf = ssParts[2]
-    let scaleFF = ssParts[3], shiftFF = ssParts[4], gateFF = ssParts[5]
+    let scaleSelf = ssParts[0]
+    let shiftSelf = ssParts[1]
+    let gateSelf = ssParts[2]
+    let scaleFF = ssParts[3]
+    let shiftFF = ssParts[4]
+    let gateFF = ssParts[5]
 
     var x = xIn
     var residual = x
@@ -346,8 +357,11 @@ public final class StableAudioDiT {
     h = h * MLX.sigmoid(1 - gateSelf)
     x = h + residual
 
-    x = x + crossAttention(rmsNorm(x, layer.crossAttendNorm, eps: config.normEps),
-                           context: context, layer: layer)
+    x =
+      x
+      + crossAttention(
+        rmsNorm(x, layer.crossAttendNorm, eps: config.normEps),
+        context: context, layer: layer)
 
     x = x + localEmbedPadded
 
@@ -367,7 +381,7 @@ public final class StableAudioDiT {
     let E = config.embedDim
     let nMem = config.numMemoryTokens
 
-    var x = linear(xIn, weights.projectIn)   // (B, T, E)
+    var x = linear(xIn, weights.projectIn)  // (B, T, E)
     let mem = MLX.broadcast(
       weights.memoryTokens.expandedDimensions(axis: 0), to: [B, nMem, E])
     x = MLX.concatenated([mem, x], axis: 1)  // (B, nMem+T, E)
@@ -378,15 +392,16 @@ public final class StableAudioDiT {
     let globalCond = linear(g, weights.globalCondEmbed2W, weights.globalCondEmbed2B)
 
     for layer in weights.layers {
-      let localEmb = localEmbed(localZeros, layer: layer)              // (B, T, E)
+      let localEmb = localEmbed(localZeros, layer: layer)  // (B, T, E)
       let pad = MLXArray.zeros([B, nMem, E], dtype: localEmb.dtype)
       let localEmbPadded = MLX.concatenated([pad, localEmb], axis: 1)  // (B, nMem+T, E)
-      x = block(x, context: context, globalCond: globalCond,
-                localEmbedPadded: localEmbPadded, layer: layer)
+      x = block(
+        x, context: context, globalCond: globalCond,
+        localEmbedPadded: localEmbPadded, layer: layer)
     }
 
     x = x[nMem..., axis: 1]  // drop memory tokens
-    return linear(x, weights.projectOut)   // (B, T, io)
+    return linear(x, weights.projectOut)  // (B, T, io)
   }
 
   /// ExpoFourier timestep features: `t:(B,) → (B, timestepFeatDim)`.
@@ -436,7 +451,8 @@ public final class StableAudioDiT {
     // Match the reference: the text-to-audio zero local-add-cond is fp32 (its
     // per-block MLP bias path then promotes the residual stream to fp32 exactly
     // as the Python reference does — MLX type promotion is identical here).
-    let local: MLXArray = localAddCond
+    let local: MLXArray =
+      localAddCond
       ?? MLXArray.zeros([B, T, config.localAddCondDim], dtype: .float32)
 
     let h = transformer(xPP, context: context, globalEmbed: globalEmbed, localZeros: local)

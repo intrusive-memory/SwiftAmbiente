@@ -10,9 +10,9 @@
 // inference logic here.
 
 import MLX
+import MLXFFT
 import MLXNN
 import MLXRandom
-import MLXFFT
 
 /// Namespace for the Stable Audio backend. Intentionally empty at Sortie 5;
 /// populated by Sorties 6–10.

@@ -169,7 +169,9 @@ struct T5GemmaEncoderTests {
 
       // Global stats over the real (non-pad) token rows.
       let nz = fixture.num_tokens
-      var sum: Float = 0, sumSq: Float = 0, absMax: Float = 0
+      var sum: Float = 0
+      var sumSq: Float = 0
+      var absMax: Float = 0
       for r in 0..<nz {
         for c in 0..<hidden {
           let v = element(r, c)

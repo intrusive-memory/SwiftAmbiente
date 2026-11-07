@@ -59,7 +59,7 @@ public final class StableAudioPipeline {
   /// (`L,R,L,R,…`) as `[Float]`, the layout `WAVWriter` consumes.
   public static func interleave(_ waveform: MLXArray, frames: Int) -> [Float] {
     let n = min(frames, waveform.shape[2])
-    let trimmed = waveform[0, 0..., ..<n]                 // (channels, n)
+    let trimmed = waveform[0, 0..., ..<n]  // (channels, n)
     return trimmed.transposed(1, 0).asType(.float32).asArray(Float.self)
   }
 

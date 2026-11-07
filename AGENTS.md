@@ -101,7 +101,7 @@ neural backend runs. Authoritative summary: README "Licensing" and `NOTICE`.
 
 ## Recent Changes
 
-### 0.1.0-dev
+### 0.1.0 (pre-release)
 - Initial scaffold: backend abstraction, procedural generator, `ambiente` CLI,
   scene presets.
 - Stable Audio 3 Small SFX neural backend (`StableAudioGenerator`, MLX Swift) with

@@ -28,13 +28,13 @@ import MLX
 /// the reference `SecondsTotalEmbedder`.
 public struct SecondsTotalEmbedder {
   let weight: MLXArray  // (768, fourierDim) fp32
-  let bias: MLXArray    // (768,) fp32
+  let bias: MLXArray  // (768,) fp32
   let minVal: Float
   let maxVal: Float
   let fourierDim: Int
   /// Precomputed `freqs = exp(arange(dim/2)/(dim/2 − 1)·(ln max − ln min) + ln min)`
   /// (no 2π — the reference applies `* 2 * π` to `t · freqs` at call time).
-  let freqs: MLXArray   // (fourierDim/2,) fp32
+  let freqs: MLXArray  // (fourierDim/2,) fp32
 
   public init(
     weight: MLXArray, bias: MLXArray,
@@ -55,7 +55,8 @@ public struct SecondsTotalEmbedder {
   static func expoFreqs(dim: Int, minFreq: Double, maxFreq: Double) -> MLXArray {
     let half = dim / 2
     let ramp = MLXArray.arange(half, dtype: .float32) / Float(max(half - 1, 1))
-    let logMin = Foundation.log(minFreq), logMax = Foundation.log(maxFreq)
+    let logMin = Foundation.log(minFreq)
+    let logMax = Foundation.log(maxFreq)
     let freqs = MLX.exp(ramp * Float(logMax - logMin) + Float(logMin))
     MLX.eval(freqs)
     return freqs
@@ -125,7 +126,8 @@ public struct StableAudioConditioner {
   ///   - mask: attention mask `(1, S)`.
   ///   - seconds: `seconds_total` value.
   ///   - dtype: sampling dtype (fp16) the tensors are cast to.
-  public func assemble(embeds: MLXArray, mask: MLXArray, seconds: Float, dtype: DType) -> Assembled {
+  public func assemble(embeds: MLXArray, mask: MLXArray, seconds: Float, dtype: DType) -> Assembled
+  {
     let e = embeds.asType(dtype)
     let padded = applyPromptPadding(embeds: e, mask: mask)
     let secondsEmbed = secondsEmbedder(seconds).asType(dtype)  // (1,1,768)

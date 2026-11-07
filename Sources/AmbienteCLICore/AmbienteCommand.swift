@@ -46,7 +46,9 @@ public struct AmbienteCommand: AsyncParsableCommand {
 
   @Option(
     name: .long,
-    help: "Classifier-free guidance scale (neural backend). The Small SFX model is tuned for 1.0; higher values over-drive it into loud, garbled audio.")
+    help:
+      "Classifier-free guidance scale (neural backend). The Small SFX model is tuned for 1.0; higher values over-drive it into loud, garbled audio."
+  )
   public var cfg: Double = 1.0
 
   @Option(name: .long, help: "Diffusion sampler steps (neural backend).")

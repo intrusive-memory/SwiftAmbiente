@@ -79,7 +79,7 @@ let stableAudioComponentDescriptors: [ComponentDescriptor] = [
     displayName: "Stable Audio 3 Small — SFX",
     repoId: StableAudioModelRepo.smallSFX.rawValue,
     minimumMemoryBytes: 1_500_000_000
-  ),
+  )
 ]
 
 /// Module-level registration trigger.

@@ -82,7 +82,9 @@ struct StableAudioGoldenParityTests {
 
   @Test("unpatch is rearrange('b (c h) l -> b c (l h)', h=256)")
   func unpatchLayout() {
-    let c = 2, h = 256, l = 3
+    let c = 2
+    let h = 256
+    let l = 3
     // patches[0, ch·h + p, t] = 1000·ch + 10·t + p/1000 encodes (channel, time, patch-pos).
     var vals = [Float](repeating: 0, count: c * h * l)
     for ch in 0..<c {

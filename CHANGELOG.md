@@ -13,7 +13,7 @@ The active changelog for SwiftAmbiente lives in two places:
 
 This file is preserved as a stub so existing links don't 404.
 
-## 0.1.0-dev (unreleased)
+## 0.1.0 (2026-11-07, pre-release)
 
 - Initial scaffold mirroring SwiftVoxAlta conventions.
 - `AmbienteGenerator` backend abstraction.

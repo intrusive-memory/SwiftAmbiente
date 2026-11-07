@@ -101,7 +101,8 @@ public enum StableAudioFlowSampler {
         let (nextKey, sub) = MLXRandom.split(key: key)
         key = nextKey
         let noise = MLXRandom.normal(x.shape, dtype: x.dtype, key: sub)
-        x = MLXArray(1.0 - tNext).asType(x.dtype) * denoised
+        x =
+          MLXArray(1.0 - tNext).asType(x.dtype) * denoised
           + MLXArray(tNext).asType(x.dtype) * noise
       } else {
         x = denoised

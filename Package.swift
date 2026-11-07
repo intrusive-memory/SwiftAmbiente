@@ -27,7 +27,7 @@ let package = Package(
       url: "https://github.com/apple/swift-argument-parser", .upToNextMajor(from: "1.8.2")),
 
     .package(
-      url: "https://github.com/intrusive-memory/SwiftAcervo.git", .upToNextMajor(from: "0.24.1")),
+      url: "https://github.com/intrusive-memory/SwiftAcervo.git", .upToNextMajor(from: "0.25.0")),
 
     // MLX Swift — the Stable Audio backend (WU2) translates Stability AI's
     // official Python-MLX reference op-for-op into MLX Swift (see

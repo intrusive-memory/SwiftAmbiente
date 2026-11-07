@@ -263,12 +263,15 @@ public final class T5GemmaTextEncoder {
     MLX.matmul(x, weight.transposed())
   }
 
-  private func selfAttention(_ x: MLXArray, layer: T5GemmaLayerWeights,
-                             cos: MLXArray, sin: MLXArray, addMask: MLXArray?) -> MLXArray
-  {
+  private func selfAttention(
+    _ x: MLXArray, layer: T5GemmaLayerWeights,
+    cos: MLXArray, sin: MLXArray, addMask: MLXArray?
+  ) -> MLXArray {
     let shape = x.shape
-    let B = shape[0], S = shape[1]
-    let H = config.numAttentionHeads, D = config.headDim
+    let B = shape[0]
+    let S = shape[1]
+    let H = config.numAttentionHeads
+    let D = config.headDim
     let scaling = powf(Float(config.queryPreAttnScalar), -0.5)
 
     var q = linear(x, layer.qProj).reshaped([B, S, H, D]).transposed(0, 2, 1, 3)
@@ -290,9 +293,10 @@ public final class T5GemmaTextEncoder {
     return linear(gate * linear(x, layer.upProj), layer.downProj)
   }
 
-  private func encoderLayer(_ x0: MLXArray, layer: T5GemmaLayerWeights,
-                            cos: MLXArray, sin: MLXArray, addMask: MLXArray?) -> MLXArray
-  {
+  private func encoderLayer(
+    _ x0: MLXArray, layer: T5GemmaLayerWeights,
+    cos: MLXArray, sin: MLXArray, addMask: MLXArray?
+  ) -> MLXArray {
     var h = rmsNorm(x0, layer.preSelfAttnLN)
     h = selfAttention(h, layer: layer, cos: cos, sin: sin, addMask: addMask)
     h = rmsNorm(h, layer.postSelfAttnLN)
@@ -307,7 +311,8 @@ public final class T5GemmaTextEncoder {
   /// (1 = real token, 0 = pad) or nil. Returns the last hidden state (B, S, 768)
   /// fp16.
   public func callAsFunction(inputIds: MLXArray, attentionMask: MLXArray?) -> MLXArray {
-    let B = inputIds.shape[0], S = inputIds.shape[1]
+    let B = inputIds.shape[0]
+    let S = inputIds.shape[1]
     let hidden = config.hiddenSize
 
     // Embedding gather → fp16, then × √hidden_size.

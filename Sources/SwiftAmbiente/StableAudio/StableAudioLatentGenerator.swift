@@ -51,7 +51,8 @@ public final class StableAudioLatentGenerator {
 
   /// Load every component from an Acervo-resolved SFX model directory.
   public static func load(fromModelDirectory modelDir: URL) throws -> StableAudioLatentGenerator {
-    try load(assets: StableAudioModelAssets.load(fromModelDirectory: modelDir), modelDirectory: modelDir)
+    try load(
+      assets: StableAudioModelAssets.load(fromModelDirectory: modelDir), modelDirectory: modelDir)
   }
 
   /// Build from already-loaded assets (lets the S9 pipeline share one weight map
@@ -103,8 +104,8 @@ public final class StableAudioLatentGenerator {
     let assembled = conditioner.assemble(
       embeds: cond.embeddings, mask: cond.mask,
       seconds: Float(settings.durationSeconds), dtype: dtype)
-    let crossAttn = assembled.crossAttn      // (1, S+1, 768)
-    let globalCond = assembled.globalCond    // (1, 768)
+    let crossAttn = assembled.crossAttn  // (1, S+1, 768)
+    let globalCond = assembled.globalCond  // (1, 768)
 
     let cfg = Float(settings.cfgScale)
     let useCFG = cfg != 1.0
@@ -131,7 +132,8 @@ public final class StableAudioLatentGenerator {
       let global2 = MLX.concatenated([globalCond, globalCond], axis: 0)
       let vBatched = dit(x2, t: t2, crossAttnCond: cross2, globalCond: global2)
       let parts = vBatched.split(parts: 2, axis: 0)
-      let condV = parts[0], uncondV = parts[1]
+      let condV = parts[0]
+      let uncondV = parts[1]
 
       // rf_denoiser: denoised = x − σ·v, with σ = t. fp32 throughout.
       let sigma = t.reshaped([t.shape[0], 1, 1]).asType(.float32)

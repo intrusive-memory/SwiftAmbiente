@@ -48,7 +48,8 @@ struct PCMWAV {
     guard tag(8) == "WAVE" else { throw ParseError.badTag("WAVE@8=\(tag(8))") }
     guard tag(12) == "fmt ", u32(16) == 16 else { throw ParseError.badTag("fmt @12=\(tag(12))") }
     guard tag(36) == "data" else { throw ParseError.badTag("data@36=\(tag(36))") }
-    let format = u16(20), bits = u16(34)
+    let format = u16(20)
+    let bits = u16(34)
     guard format == 1, bits == 16 else { throw ParseError.notPCM16(format: format, bits: bits) }
     let dataSize = u32(40)
     guard dataSize == bytes.count - 44 else {
@@ -110,11 +111,15 @@ struct AudioSpectralDelta: CustomStringConvertible {
   static func compare(candidate: PCMWAV, reference: PCMWAV) -> AudioSpectralDelta {
     precondition(candidate.channels == reference.channels, "channel count mismatch")
     let n = min(candidate.frames, reference.frames)
-    var rmsRel = 0.0, ltas = 0.0, spec = 0.0, corr = 1.0
+    var rmsRel = 0.0
+    var ltas = 0.0
+    var spec = 0.0
+    var corr = 1.0
     for c in 0..<reference.channels {
       let a = Array(candidate.channelSamples[c][0..<n])
       let b = Array(reference.channelSamples[c][0..<n])
-      let ra = rms(a), rb = rms(b)
+      let ra = rms(a)
+      let rb = rms(b)
       rmsRel = max(rmsRel, abs(ra - rb) / rb)
       let da = bandDB(a, sampleRate: reference.sampleRate)
       let db = bandDB(b, sampleRate: reference.sampleRate)
@@ -128,8 +133,12 @@ struct AudioSpectralDelta: CustomStringConvertible {
       let frames = Double(active.count)
       var l = 0.0
       for k in 0..<bands {
-        var ma = 0.0, mb = 0.0
-        for t in active { ma += da[t][k]; mb += db[t][k] }
+        var ma = 0.0
+        var mb = 0.0
+        for t in active {
+          ma += da[t][k]
+          mb += db[t][k]
+        }
         l += abs(ma - mb) / frames
       }
       ltas = max(ltas, l / Double(bands))
@@ -156,8 +165,11 @@ struct AudioSpectralDelta: CustomStringConvertible {
 
   static func pearson(_ a: [Double], _ b: [Double]) -> Double {
     let n = Double(a.count)
-    let ma = a.reduce(0, +) / n, mb = b.reduce(0, +) / n
-    var sab = 0.0, saa = 0.0, sbb = 0.0
+    let ma = a.reduce(0, +) / n
+    let mb = b.reduce(0, +) / n
+    var sab = 0.0
+    var saa = 0.0
+    var sbb = 0.0
     for i in 0..<a.count {
       sab += (a[i] - ma) * (b[i] - mb)
       saa += (a[i] - ma) * (a[i] - ma)

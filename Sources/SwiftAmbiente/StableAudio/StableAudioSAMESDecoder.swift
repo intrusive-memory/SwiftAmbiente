@@ -49,11 +49,11 @@ public final class StableAudioSAMESDecoder {
   public static let ffInner = 2304
   public static let outChannels = 512
   public static let stride = 16
-  static let subChunkSize = stride + 1                     // 17
+  static let subChunkSize = stride + 1  // 17
   static let chunkSizeLat = 32
   static let effectiveChunk = chunkSizeLat + chunkSizeLat / stride  // 34
-  static let shift = effectiveChunk / 2                     // 17
-  static let sinPerPos = subChunkSize - 1                   // 16
+  static let shift = effectiveChunk / 2  // 17
+  static let sinPerPos = subChunkSize - 1  // 16
 
   /// `scripts/sa3_mlx.py::DECODER_CHOICES["same-s"]` chunk config.
   public static let defaultChunkSize = 8
@@ -68,13 +68,13 @@ public final class StableAudioSAMESDecoder {
   struct DyTWeights {
     let alpha: MLXArray  // (1,)
     let gamma: MLXArray  // (dim,)
-    let beta: MLXArray   // (dim,)
+    let beta: MLXArray  // (dim,)
   }
 
   struct BlockWeights {
     let preNorm: DyTWeights
-    let toQKV: MLXArray     // (5·DIM, DIM)
-    let toOut: MLXArray     // (DIM, DIM)
+    let toQKV: MLXArray  // (5·DIM, DIM)
+    let toOut: MLXArray  // (DIM, DIM)
     let qNorm: DyTWeights
     let kNorm: DyTWeights
     let ffNorm: DyTWeights
@@ -84,13 +84,13 @@ public final class StableAudioSAMESDecoder {
     let projOutB: MLXArray
   }
 
-  let runningStd: MLXArray     // (1,)
-  let projectInW: MLXArray     // (DIM, 256)
-  let projectInB: MLXArray     // (DIM,)
-  let newTokens: MLXArray      // (1, 1, DIM)
+  let runningStd: MLXArray  // (1,)
+  let projectInW: MLXArray  // (DIM, 256)
+  let projectInB: MLXArray  // (DIM,)
+  let newTokens: MLXArray  // (1, 1, DIM)
   let blocks: [BlockWeights]
-  let mappingW: MLXArray       // (512, 3, DIM)  MLX conv layout [out, k, in]
-  let mappingB: MLXArray       // (512,)
+  let mappingW: MLXArray  // (512, 3, DIM)  MLX conv layout [out, k, in]
+  let mappingB: MLXArray  // (512,)
 
   init(
     runningStd: MLXArray, projectInW: MLXArray, projectInB: MLXArray,
@@ -198,8 +198,10 @@ public final class StableAudioSAMESDecoder {
   /// Differential SDPA: `SDPA(q,k,v) − SDPA(q_diff,k_diff,v)`; `to_qkv` chunk(5)
   /// order is q, k, v, q_diff, k_diff.
   private func attention(_ x: MLXArray, _ w: BlockWeights) -> MLXArray {
-    let B = x.shape[0], T = x.shape[1]
-    let H = Self.numHeads, D = Self.headDim
+    let B = x.shape[0]
+    let T = x.shape[1]
+    let H = Self.numHeads
+    let D = Self.headDim
     let scale = powf(Float(D), -0.5)
 
     let qkv = linear(x, w.toQKV)
@@ -251,7 +253,8 @@ public final class StableAudioSAMESDecoder {
   ///
   /// Requires even `T_lat` (the internal `T_lat·17` must align to 34).
   public func callAsFunction(_ latents: MLXArray) -> MLXArray {
-    let B = latents.shape[0], tLat = latents.shape[2]
+    let B = latents.shape[0]
+    let tLat = latents.shape[2]
     let D = Self.dim
     precondition(tLat % 2 == 0, "SAME-S un-chunked decode requires even T_lat (got \(tLat))")
 
@@ -344,7 +347,8 @@ public final class StableAudioSAMESDecoder {
   public func decode(_ latents: MLXArray) -> MLXArray {
     let x = latents.asType(.float32)
     let tLat = x.shape[2]
-    let chunk = Self.defaultChunkSize, ovl = Self.defaultOverlap
+    let chunk = Self.defaultChunkSize
+    let ovl = Self.defaultOverlap
     let kernel = chunk + 2 * ovl
     let patches: MLXArray
     if tLat > kernel {
@@ -367,7 +371,9 @@ public final class StableAudioSAMESDecoder {
   public static func unpatch(
     _ patches: MLXArray, patchSize: Int = patchSize, channels: Int = audioChannels
   ) -> MLXArray {
-    let B = patches.shape[0], CH = patches.shape[1], L = patches.shape[2]
+    let B = patches.shape[0]
+    let CH = patches.shape[1]
+    let L = patches.shape[2]
     precondition(CH == channels * patchSize, "expected \(channels * patchSize) channels, got \(CH)")
     return patches.reshaped([B, channels, patchSize, L])
       .transposed(0, 1, 3, 2)
