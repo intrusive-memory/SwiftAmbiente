@@ -1,9 +1,6 @@
 ---
-updated: 2026-11-07
----
-
----
 type: reference
+updated: 2026-11-07
 ---
 
 # AGENTS.md — SwiftAmbiente
@@ -15,9 +12,12 @@ SwiftAmbiente renders the background bed that sits underneath them in
 
 ## Status
 
-**Scaffold.** Shipping engine = `ProceduralAmbienteGenerator` (dependency-free
-filtered noise, usable today). Neural engine = Stable Audio 3 Small SFX via MLX
-Swift, **staged** — see [`REQUIREMENTS-stable-audio-integration.md`](docs/complete/phantom-foley-01/REQUIREMENTS-stable-audio-integration.md).
+Two backends. **Neural**: `StableAudioGenerator` — Stable Audio 3 Small SFX via
+MLX Swift (T5Gemma → DiT → SAME-S), used whenever the model is installed; weights
+download on demand through SwiftAcervo. **Fallback**: `ProceduralAmbienteGenerator`
+(dependency-free seeded filtered noise) when the model is absent. Design notes and
+parity results: `Sources/SwiftAmbiente/StableAudio/STRATEGY.md`. Original
+requirements and mission record: [`docs/complete/phantom-foley-01/`](docs/complete/phantom-foley-01/REQUIREMENTS-stable-audio-integration.md).
 
 ## Build & test
 
@@ -36,9 +36,9 @@ Destination is always `platform=macOS,arch=arm64`.
 
 ```
 AmbienteEngine            ← front door: picks a backend, renders a bed
- ├─ AmbienteModelManager  ← resolves shared-models dir; loads MLX backend (staged)
+ ├─ AmbienteModelManager  ← resolves shared-models dir; loads the MLX Stable Audio backend
  └─ AmbienteGenerator     ← backend protocol
-     ├─ ProceduralAmbienteGenerator   ← interim DSP (seeded filtered noise)
+     ├─ ProceduralAmbienteGenerator   ← fallback DSP (seeded filtered noise)
      └─ (StableAudioGenerator)        ← planned MLX backend
 ```
 
@@ -57,9 +57,14 @@ honour `durationSeconds` and `seed` so output is reproducible across backends;
 ### Backend selection
 
 `AmbienteEngine.resolveGenerator` returns the MLX backend when its model is
-installed and loadable, otherwise the procedural generator (and logs which ran to
-stderr). Today the ML path always falls through because
-`AmbienteModelManager.loadGenerator` throws `modelNotAvailable`.
+installed and loadable (`StableAudioGenerator`, `generatorId == "stable-audio"`),
+otherwise the procedural generator (and logs the fallback to stderr). Loading goes
+through SwiftAcervo, which **traps** unless the host process sets
+`ACERVO_CDN_BASE_URL` (env) or `AcervoCDNBaseURL` (Info.plist); the `ambienta` CLI
+sets a default, the library deliberately does not. MLX executables must ship
+`mlx-swift_Cmlx.bundle` next to the binary (`make install`/`make release` do).
+Model-present tests run with `TEST_RUNNER_ACERVO_MODELS_DIR=<dir>` (the xctest
+runner can't read the App Group container).
 
 ## CLI — `ambienta`
 
@@ -77,9 +82,10 @@ Scene presets: `room-tone`, `rain`, `forest`, `city`, `ocean`, `cafe`, `night`.
 
 - **Platforms**: iOS 26+ / macOS 26+, Apple Silicon only. No `@available` for
   older OSes.
-- **Shared models**: `~/Library/SharedModels/{org}_{repo}/`, overridable via
-  `ACERVO_MODELS_DIR`; `config.json` presence = valid model. SwiftAcervo takes
-  over this resolution once wired.
+- **Shared models**: resolved by SwiftAcervo (`Acervo.sharedModelsDirectory`,
+  App Group `group.intrusive-memory.models`), overridable via `ACERVO_MODELS_DIR`;
+  a byte-equal `manifest.json` = installed model. Stable Audio's top-level config
+  is `model_config.json`, not `config.json`.
 - **Git**: `development` → PR → `main`; releases via `/ship-swift-library`.
 - **Package.swift**: the `sibling()` helper prefers a local `../<name>` checkout
   when present, else the released remote.
@@ -87,12 +93,17 @@ Scene presets: `room-tone`, `rain`, `forest`, `city`, `ocean`, `cafe`, `night`.
 ## Licensing
 
 SwiftAmbiente code: MIT-style; procedural generator: no model licensing. The
-neural backend stacks **Stability AI Community License** (commercial < US$1M +
-"Powered by Stability AI") **and Google Gemma Terms** (T5Gemma encoder). Both are
-inert until the ML backend is enabled. Details in the REQUIREMENTS doc.
+neural backend stacks the **Stability AI Community License** (registration for
+any commercial use; terminates above US$1,000,000 aggregate annual revenue;
+"Powered by Stability AI") **and the Google Gemma Terms of Use** (T5Gemma encoder;
+§3.1 pass-through of use restrictions to end users). Both apply whenever the
+neural backend runs. Authoritative summary: README "Licensing" and `NOTICE`.
 
 ## Recent Changes
 
 ### 0.1.0-dev
 - Initial scaffold: backend abstraction, procedural generator, `ambienta` CLI,
-  scene presets, staged Stable Audio integration plan.
+  scene presets.
+- Stable Audio 3 Small SFX neural backend (`StableAudioGenerator`, MLX Swift) with
+  golden-output parity gate, SwiftAcervo on-demand download, model-gated
+  integration CI, README Licensing + NOTICE (OPERATION PHANTOM FOLEY).

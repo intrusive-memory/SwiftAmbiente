@@ -1,9 +1,6 @@
 ---
-updated: 2026-11-07
----
-
----
 type: doc
+updated: 2026-11-07
 ---
 
 # SwiftAmbiente
@@ -15,10 +12,12 @@ where VoxAlta renders *voices*, SwiftAmbiente renders the *background* — room
 tone, rain, wind, city hum, the foley bed you lay underneath dialogue in
 [Produciesta](../Produciesta).
 
-> **Status: scaffold.** The shipping engine is a procedural (filtered-noise)
-> generator that produces a usable bed today. The neural backend — Stable Audio 3
-> Small SFX via MLX Swift — is staged and documented in
-> [`REQUIREMENTS-stable-audio-integration.md`](docs/complete/phantom-foley-01/REQUIREMENTS-stable-audio-integration.md).
+> **Status:** the neural backend — Stable Audio 3 Small SFX via MLX Swift — renders
+> beds whenever the model is installed (it downloads on demand through SwiftAcervo).
+> Without the model, a dependency-free procedural (filtered-noise) generator is used.
+> Using the neural backend carries model-licensing obligations — see
+> [Licensing](#licensing). Mission record:
+> [`docs/complete/phantom-foley-01/`](docs/complete/phantom-foley-01/REQUIREMENTS-stable-audio-integration.md).
 
 ## Why "Ambiente"
 
@@ -63,9 +62,9 @@ ambienta --scene forest --seed 42  # reproducible; writes ./ambiente.wav
 | Type | Role |
 |------|------|
 | `AmbienteGenerator` | Backend protocol — `generate(prompt:settings:) -> WAV` |
-| `ProceduralAmbienteGenerator` | Interim DSP backend (seeded filtered noise) |
+| `ProceduralAmbienteGenerator` | Fallback DSP backend when the model is absent (seeded filtered noise) |
 | `AmbienteEngine` | Picks the best available backend, renders a bed |
-| `AmbienteModelManager` | Resolves shared-models dir; loads the MLX backend (staged) |
+| `AmbienteModelManager` | Resolves shared-models dir; loads the MLX Stable Audio backend |
 | `AmbienteSceneDescriptor` | Built-in scene presets → prompts |
 | `StableAudioModelRepo` | Target models (Small SFX / Small Music) |
 

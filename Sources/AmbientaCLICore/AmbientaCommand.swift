@@ -19,8 +19,9 @@ public struct AmbientaCommand: AsyncParsableCommand {
     abstract: "Generate atmospheric / foley background beds for your scene.",
     discussion: """
       Renders a background audio bed from a free-form prompt or a built-in scene
-      preset. The shipping engine is a procedural (filtered-noise) generator; the
-      neural Stable Audio backend is staged (see REQUIREMENTS-stable-audio-integration.md).
+      preset. Uses the Stable Audio 3 Small SFX neural backend when its model is
+      installed, otherwise a procedural (filtered-noise) generator. Override the
+      model CDN with ACERVO_CDN_BASE_URL.
       """,
     version: "ambienta \(AmbientaVersion.current)"
   )
