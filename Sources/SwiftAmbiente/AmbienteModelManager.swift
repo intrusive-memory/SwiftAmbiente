@@ -63,12 +63,9 @@ public actor AmbienteModelManager {
   /// `AcervoManager.shared.withComponentAccess` for file-presence/checksum
   /// validation), then hands off to the WU2 construction seam below.
   ///
-  /// - Important: The MLX Stable Audio 3 Small port does not exist as a Swift
-  ///   library yet; until WU2 Sortie 10 lands, this always throws
-  ///   `AmbienteError.modelNotAvailable("backend not yet implemented")` after
-  ///   a successful ensure/access, so callers fall back to
-  ///   ``ProceduralAmbienteGenerator``. See
-  ///   `REQUIREMENTS-stable-audio-integration.md` for the integration plan.
+  /// - Returns: a ``StableAudioGenerator`` bound to the verified model directory.
+  /// - Throws: ``AmbienteError/modelNotAvailable(_:)`` when the model cannot be
+  ///   prepared; callers fall back to ``ProceduralAmbienteGenerator``.
   public func loadGenerator(_ repo: StableAudioModelRepo) async throws -> any AmbienteGenerator {
     let componentId = repo.componentId
 
@@ -92,13 +89,16 @@ public actor AmbienteModelManager {
         "\(repo.rawValue) — failed to prepare model: \(error.localizedDescription)")
     }
 
-    // WU2 construction seam: WU2 Sortie 10 replaces this throw with
-    // `return StableAudioGenerator(componentId: componentId, ...)`, composing
-    // the config/encoder/sampler/decoder pipeline built in Sorties 6–9. Until
-    // then the model is downloaded and verified but no Swift decoder exists,
-    // so `AmbienteEngine.resolveGenerator` still falls back to
-    // `ProceduralAmbienteGenerator`.
-    throw AmbienteError.modelNotAvailable("backend not yet implemented")
+    // Model is downloaded and verified: hand off to the Stable Audio generator.
+    // Weights load lazily on its first `generate` call.
+    let generator = StableAudioGenerator(
+      modelDirectory: modelDirectory(for: repo), config: config)
+    guard await generator.isAvailable() else {
+      throw AmbienteError.modelNotAvailable(
+        "\(repo.rawValue) — config.json / model.safetensors missing from "
+          + modelDirectory(for: repo).path)
+    }
+    return generator
   }
 
   /// Maps a SwiftAcervo error surfaced during `ensureComponentReady` /

@@ -1,4 +1,5 @@
 import Foundation
+import SwiftAcervo
 import Testing
 
 /// Programmatic bootstrap that ensures `ACERVO_APP_GROUP_ID` is set in the
@@ -26,6 +27,13 @@ struct AcervoEnvironmentTrait: SuiteTrait, TestScoping {
   ) async throws {
     if ProcessInfo.processInfo.environment["ACERVO_APP_GROUP_ID"] == nil {
       setenv("ACERVO_APP_GROUP_ID", "group.intrusive-memory.models", 0)
+    }
+    // `loadGenerator` -> `Acervo.ensureComponentReady` resolves the CDN base
+    // URL and traps if none is configured. With the model already present and
+    // verified locally no request is made; this placeholder only satisfies the
+    // configuration lookup (never overrides a real value).
+    if ProcessInfo.processInfo.environment[Acervo.cdnBaseURLEnvironmentVariable] == nil {
+      setenv(Acervo.cdnBaseURLEnvironmentVariable, "https://cdn.invalid/models", 0)
     }
     try await function()
   }
