@@ -107,3 +107,19 @@ neural backend runs. Authoritative summary: README "Licensing" and `NOTICE`.
 - Stable Audio 3 Small SFX neural backend (`StableAudioGenerator`, MLX Swift) with
   golden-output parity gate, SwiftAcervo on-demand download, model-gated
   integration CI, README Licensing + NOTICE (OPERATION PHANTOM FOLEY).
+
+## Queryable Codemap
+
+A prebuilt [graphify](https://pypi.org/project/graphifyy/) knowledge graph of this
+codebase lives in [`graphify-out/`](graphify-out/) (602 nodes · 1028 edges). **Prefer
+querying it before grepping** for architecture or "what connects to what" questions:
+
+```bash
+graphify query "How does X flow through the system?"
+graphify path "TypeA" "TypeB"      # shortest path between two nodes
+graphify explain "SomeType"        # plain-language node explanation
+```
+
+Human-readable summary: [`graphify-out/GRAPH_REPORT.md`](graphify-out/GRAPH_REPORT.md).
+Refresh after significant changes with `/codemap` (or
+`graphify . --backend claude-cli`).
