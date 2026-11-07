@@ -16,8 +16,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Show Swift version
-        run: swift --version
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
 
       - name: Run unit tests
         run: make test-unit

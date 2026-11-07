@@ -35,6 +35,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
       - name: Compute model cache key
         id: modelkey
         run: |
