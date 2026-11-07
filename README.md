@@ -1,4 +1,8 @@
 ---
+updated: 2026-11-07
+---
+
+---
 type: doc
 ---
 
@@ -14,7 +18,7 @@ tone, rain, wind, city hum, the foley bed you lay underneath dialogue in
 > **Status: scaffold.** The shipping engine is a procedural (filtered-noise)
 > generator that produces a usable bed today. The neural backend — Stable Audio 3
 > Small SFX via MLX Swift — is staged and documented in
-> [`REQUIREMENTS-stable-audio-integration.md`](REQUIREMENTS-stable-audio-integration.md).
+> [`REQUIREMENTS-stable-audio-integration.md`](docs/complete/phantom-foley-01/REQUIREMENTS-stable-audio-integration.md).
 
 ## Why "Ambiente"
 

@@ -1,4 +1,8 @@
 ---
+updated: 2026-11-07
+---
+
+---
 type: reference
 ---
 
@@ -13,7 +17,7 @@ SwiftAmbiente renders the background bed that sits underneath them in
 
 **Scaffold.** Shipping engine = `ProceduralAmbienteGenerator` (dependency-free
 filtered noise, usable today). Neural engine = Stable Audio 3 Small SFX via MLX
-Swift, **staged** — see [`REQUIREMENTS-stable-audio-integration.md`](REQUIREMENTS-stable-audio-integration.md).
+Swift, **staged** — see [`REQUIREMENTS-stable-audio-integration.md`](docs/complete/phantom-foley-01/REQUIREMENTS-stable-audio-integration.md).
 
 ## Build & test
 

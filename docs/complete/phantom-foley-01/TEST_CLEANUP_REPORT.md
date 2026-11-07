@@ -1,6 +1,8 @@
 ---
 type: test-cleanup-report
-state: current
+state: completed
+updated: 2026-11-07
+mission: phantom-foley-01
 ---
 
 # Test Cleanup Report: OPERATION PHANTOM FOLEY
