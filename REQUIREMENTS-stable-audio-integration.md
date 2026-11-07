@@ -1,5 +1,5 @@
 ---
-type: project
+type: requirements
 ---
 
 # REQUIREMENTS — Stable Audio backend integration

@@ -266,4 +266,61 @@ the Swift latent's dtype tracks the reference's exactly (S9's decoder upcasts to
 fp32 regardless). The test asserts a float dtype rather than a specific one to
 preserve this parity.
 
-<!-- Sortie 9: parity tolerance + observed delta recorded here. -->
+## Sortie 9 note — SAME-S decoder (Road A: true reference parity)
+
+**Decoder-path decision (user, 2026-07-19): ROAD A — hold the existing golden-WAV
+parity gate.** The S4 golden fixture came from `stable-audio-3-optimized`'s
+pre-folded `same_s_decoder_f32.npz`, but the shipped `small-sfx/model.safetensors`
+carries the decoder as raw-PyTorch weight-norm `pretransform.model.decoder.*`
+tensors. Rather than re-baseline on the shipped weights (Road B), we reproduce the
+`optimized` export deterministically and prove parity against the current fixture.
+Pre-write recon retired every parity risk; there is **no remaining reverse-
+engineering** — the conversion is mechanical:
+
+**Architecture — MATCHES the reference `same_s_decoder.py` exactly** (verified
+against the shipped tensor shapes): 5×DIM differential attention
+(`self_attn.to_qkv.weight [3840,768]` = 5×768 ✓), `DyT` norms
+(`{pre,ff,q,k}_norm.{alpha,beta,gamma}`, alpha [1], head-dim norms [64], dim norms
+[768] ✓), GLU-SiLU FF (`ff.ff.0.proj [4608,768]` = FF_INNER 2304 × 2 ✓,
+`ff.ff.2 [768,2304]` ✓), 6 blocks, RoPE 32 dims / base 10000 / non-traditional,
+weight-norm output conv.
+
+**Weight mapping — nested→flat remap + one fold (both deterministic):**
+- `pretransform.model.decoder.layers.1.{weight[768,256],bias}` → `project_in`
+  (Linear 256→768).
+- `pretransform.model.decoder.layers.3.new_tokens [1,1,768]` → `new_tokens`.
+- `pretransform.model.decoder.layers.3.transformers.{0..5}.*` → `blocks[0..5]`.
+- `pretransform.model.decoder.layers.3.mapping.{weight_g[512,1,1],weight_v[512,768,3],bias}`
+  → `mapping`: **weight-norm fold** `w = g · v / ‖v‖` (norm over in+kernel axes,
+  per out-channel), then permute PyTorch `[out,in,k]` → MLX conv `[out,k,in]`
+  (`transposed(0,2,1)`), applied with `padding:1`. This is the ONLY fold.
+- `pretransform.model.bottleneck.running_std` → `running_std`.
+
+**Three parity traps identified & resolved:**
+1. **RoPE `inv_freq` is IGNORED.** The shipped blocks carry
+   `transformers.*.rope.inv_freq [16]`, but the reference recomputes inv_freq from
+   base=10000 via `mx.fast.rope` and discards any stored value. Swift recomputes
+   identically (mirror the DiT's `MLX.RoPE(..., base: 10000, traditional: false)`);
+   the stored tensor is not loaded.
+2. **Bottleneck is asymmetric — decoder uses ONLY `running_std`.** Encoder does
+   `x*scaling_factor + bias; x/running_std`; the decoder does only
+   `latents * running_std`. The shipped `bottleneck.{scaling_factor,bias,
+   noise_scaling_factor}` are encoder-side and are **not** applied on decode.
+   Translating only `running_std` is faithful, not a bug.
+3. **FP32 throughout.** SAME-S catastrophically cancels at fp16 (differential
+   attention), so the whole decoder runs FP32 regardless of the DiT's fp16 latent
+   (upcast the S8 latent on entry). The reference decoder always runs FP32.
+
+**Chunking.** `decode_chunked` uses kernel = chunk + 2·overlap; SAME-S config is
+`(chunk=8, overlap=2)` → kernel 12. Un-chunked SAME-S requires **even T_lat**
+(internal `T·17` must align to 34). The S9 parity test must pin `durationSeconds`
+to the exact `--seconds` recorded in the S4 reference-invocation note (NOT S8's
+`T_lat=11`, which is odd and only exercised the sampler determinism test).
+
+**Post-decode.** Decoder output is `[B, 512, T_lat·16]` audio *patches*;
+patched-pretransform unpatch (`rearrange("b (c h) l -> b c (l h)", h=256)`) →
+`[B, 2, T_lat·4096]` stereo waveform → existing `WAVWriter` → interleaved 44.1 kHz
+WAV. `512 = 2 (stereo) × 256 (patch)`, giving `samplesPerLatent = 16·256 = 4096`
+(consistent with S8).
+
+<!-- Sortie 9: parity tolerance + observed delta recorded here after the build. -->
