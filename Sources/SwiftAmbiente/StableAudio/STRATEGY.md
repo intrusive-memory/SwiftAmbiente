@@ -469,3 +469,44 @@ substituting it into the Python decoder, is relL2 **2.6e-7** (negligible).
   clip in `save_wav`; `WAVWriter` clamps identically but rounds where the
   reference truncates (`astype(int16)`), a ≤ 1-LSB difference, well below the
   tolerance.
+
+## Post-mission correction (2026-11-07) — cfg 1.0 default, fixture re-recorded
+
+**Defect.** `GenerationSettings.cfgScale` defaulted to **7.0**, copied from the S4
+fixture invocation. Stable Audio 3 Small SFX is distilled to run at **cfg 1.0**
+(the reference CLI default). At 7.0 the model is over-driven: ≈ −6 to −10 dBFS RMS,
+2–13% of samples hard-clipped, audibly garbled. Stability's own reference at cfg
+7.0 reproduces the Swift output's level and clip count almost exactly, so the
+translation was faithful — the *oracle* was wrong, and the S9 gate faithfully
+matched Swift to it. Found only when a human listened to rendered beds.
+
+**Fix.**
+- `GenerationSettings.cfgScale` default → 1.0; `ambienta` gains `--cfg`
+  (default 1.0) and `--steps` (default 8).
+- Golden fixture re-recorded at cfg 1.0 on the same reference commit and mlx
+  0.32.0 venv (which first re-produced the old cfg 7.0 MD5 byte-for-byte).
+  New MD5 `202dd1cf37ea6667ebd4e7a1389a35d7`.
+- At cfg 1.0 the guidance term `(cfg − 1)·diff` vanishes, so APG is inert and
+  Swift takes the single-branch (no-CFG) path.
+
+**Parity at cfg 1.0 is far tighter than at 7.0.** Sample-wise relative L2 vs the
+golden: **0.0008** (was 0.30 at cfg 7.0 — over-driving amplified kernel-level
+differences). Gate metrics: rmsRel 0.0003, LTAS 0.011 dB, spectrogram 0.013 dB,
+envelope r 1.0000 — two orders of magnitude inside the unchanged limits
+(1.2 dB / 0.4 dB / 0.06 / 0.97).
+
+**Metric fix — silence floor.** The cfg 1.0 golden fades to digital near-silence
+(−105 to −114 dBFS, ≈1 LSB) in its last ~0.3 s. In those frames a one-LSB
+difference reads as a 15–28 dB "error", which dominated the mean-of-dB LTAS
+(0.73 dB, failing) while the median frame error was 0.006 dB.
+`AudioSpectralDelta` now excludes reference frames below **−90 dBFS** (≈1 LSB of
+16-bit PCM) from the two dB-averaged metrics; RMS and envelope correlation still
+use every frame. Thresholds unchanged.
+
+**Negative controls (all rejected):** seed 43 → spectrogram 6.9 dB, r 0.42;
+**cfg 7.0** (new, guards this regression) → spectrogram 20.5 dB, rmsRel 10.3.
+
+**Note on the limits.** They were derived at cfg 7.0 from cross-MLX-build variance
+and are now ~100× looser than observed. They still separate correct from wrong
+output by a wide margin; tightening them would need the cross-build sweep redone
+at cfg 1.0.

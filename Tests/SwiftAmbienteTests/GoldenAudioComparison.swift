@@ -75,8 +75,9 @@ struct PCMWAV {
 ///
 /// Analysis (fixed; see STRATEGY.md): Hann-windowed STFT, frame 2048, hop 1024
 /// (≈46 ms / 23 ms at 44.1 kHz), power summed into 32 log-spaced bands from
-/// 40 Hz to 20 kHz, `dB = 10·log10(E + 1e-10)`. Each figure is the worst case
-/// over the channels.
+/// 40 Hz to 20 kHz, `dB = 10·log10(E + 1e-10)`. The dB metrics skip reference
+/// frames below ``silenceFloorDBFS``. Each figure is the worst case over the
+/// channels.
 struct AudioSpectralDelta: CustomStringConvertible {
   /// `|RMS_c − RMS_r| / RMS_r` — overall loudness error (fraction).
   let rmsRelative: Double
@@ -101,6 +102,10 @@ struct AudioSpectralDelta: CustomStringConvertible {
   static let bandCount = 32
   static let minHz = 40.0
   static let maxHz = 20_000.0
+  /// Reference frames quieter than this (≈1 LSB of 16-bit PCM, −90.3 dBFS) are
+  /// excluded from the dB-averaged metrics (`ltasDB`, `spectrogramDB`).
+  static let silenceFloorDBFS = -90.0
+  static let silenceFloorLinear = pow(10.0, silenceFloorDBFS / 20.0)
 
   static func compare(candidate: PCMWAV, reference: PCMWAV) -> AudioSpectralDelta {
     precondition(candidate.channels == reference.channels, "channel count mismatch")
@@ -113,18 +118,25 @@ struct AudioSpectralDelta: CustomStringConvertible {
       rmsRel = max(rmsRel, abs(ra - rb) / rb)
       let da = bandDB(a, sampleRate: reference.sampleRate)
       let db = bandDB(b, sampleRate: reference.sampleRate)
-      let frames = da.count, bands = da.first?.count ?? 0
+      let bands = da.first?.count ?? 0
+      // dB metrics only over frames the 16-bit reference can actually resolve.
+      // In digital near-silence (≈1 LSB) a one-LSB difference reads as a 15–28 dB
+      // "error" and dominates a mean of dB values (see STRATEGY.md, cfg 1.0 note).
+      let refFrameRMS = frameRMS(b)
+      var active = refFrameRMS.indices.filter { refFrameRMS[$0] >= silenceFloorLinear }
+      if active.isEmpty { active = Array(refFrameRMS.indices) }
+      let frames = Double(active.count)
       var l = 0.0
       for k in 0..<bands {
         var ma = 0.0, mb = 0.0
-        for t in 0..<frames { ma += da[t][k]; mb += db[t][k] }
-        l += abs(ma - mb) / Double(frames)
+        for t in active { ma += da[t][k]; mb += db[t][k] }
+        l += abs(ma - mb) / frames
       }
       ltas = max(ltas, l / Double(bands))
       var s = 0.0
-      for t in 0..<frames { for k in 0..<bands { s += abs(da[t][k] - db[t][k]) } }
-      spec = max(spec, s / Double(frames * bands))
-      corr = min(corr, pearson(frameRMS(a), frameRMS(b)))
+      for t in active { for k in 0..<bands { s += abs(da[t][k] - db[t][k]) } }
+      spec = max(spec, s / (frames * Double(bands)))
+      corr = min(corr, pearson(frameRMS(a), refFrameRMS))
     }
     return AudioSpectralDelta(
       rmsRelative: rmsRel, ltasDB: ltas, spectrogramDB: spec, envelopeCorrelation: corr)

@@ -63,7 +63,7 @@ struct StableAudioGeneratorTests {
       let g = StableAudioGenerator(modelDirectory: dir, config: config)
       #expect(await g.isAvailable())
 
-      let settings = GenerationSettings(durationSeconds: 2.0, steps: 8, cfgScale: 7.0, seed: 42)
+      let settings = GenerationSettings(durationSeconds: 2.0, steps: 8, cfgScale: 1.0, seed: 42)
       let data = try await g.generate(prompt: "rain", settings: settings)
 
       // RIFF/WAVE header, 44-byte header + payload.
@@ -88,12 +88,12 @@ struct StableAudioGeneratorTests {
   func deterministicForSeed() async throws {
     try await withResolvedAcervoModelsDirectory { dir in
       let g = StableAudioGenerator(modelDirectory: dir)
-      let settings = GenerationSettings(durationSeconds: 1.0, steps: 4, cfgScale: 7.0, seed: 7)
+      let settings = GenerationSettings(durationSeconds: 1.0, steps: 4, cfgScale: 1.0, seed: 7)
       let a = try await g.generate(prompt: "forest", settings: settings)
       let b = try await g.generate(prompt: "forest", settings: settings)
       let c = try await g.generate(
         prompt: "forest",
-        settings: GenerationSettings(durationSeconds: 1.0, steps: 4, cfgScale: 7.0, seed: 8))
+        settings: GenerationSettings(durationSeconds: 1.0, steps: 4, cfgScale: 1.0, seed: 8))
       #expect(a == b)
       #expect(a != c)
     }

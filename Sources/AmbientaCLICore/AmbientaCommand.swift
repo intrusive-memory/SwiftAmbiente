@@ -46,6 +46,14 @@ public struct AmbientaCommand: AsyncParsableCommand {
 
   @Option(
     name: .long,
+    help: "Classifier-free guidance scale (neural backend). The Small SFX model is tuned for 1.0; higher values over-drive it into loud, garbled audio.")
+  public var cfg: Double = 1.0
+
+  @Option(name: .long, help: "Diffusion sampler steps (neural backend).")
+  public var steps: Int = 8
+
+  @Option(
+    name: .long,
     help: "Preferred Stable Audio variant when installed: 'sfx' or 'music'. Default: sfx.")
   public var model: String?
 
@@ -72,6 +80,12 @@ public struct AmbientaCommand: AsyncParsableCommand {
     if duration <= 0 {
       throw ValidationError("--duration must be greater than 0.")
     }
+    if cfg <= 0 {
+      throw ValidationError("--cfg must be greater than 0.")
+    }
+    if steps < 1 {
+      throw ValidationError("--steps must be at least 1.")
+    }
 
     let repo = try resolveModel()
     let prompt = try resolvePrompt()
@@ -82,7 +96,8 @@ public struct AmbientaCommand: AsyncParsableCommand {
     FileHandle.standardError.write(Data("generator: \(generator.generatorId)\n".utf8))
     let wavData = try await generator.generate(
       prompt: prompt,
-      settings: GenerationSettings(durationSeconds: duration, seed: seed)
+      settings: GenerationSettings(
+        durationSeconds: duration, steps: steps, cfgScale: cfg, seed: seed)
     )
 
     let outputPath = output ?? "./ambiente.wav"

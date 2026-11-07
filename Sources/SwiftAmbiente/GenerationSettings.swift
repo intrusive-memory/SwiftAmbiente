@@ -28,7 +28,7 @@ public struct GenerationSettings: Codable, Sendable {
   public init(
     durationSeconds: Double = 30.0,
     steps: Int = 8,
-    cfgScale: Double = 7.0,
+    cfgScale: Double = 1.0,
     seed: UInt64? = nil
   ) {
     self.durationSeconds = durationSeconds
