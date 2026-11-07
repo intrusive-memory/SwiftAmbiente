@@ -1,6 +1,6 @@
 //
 //  AudioFileWriter.swift
-//  AmbientaCLICore
+//  AmbienteCLICore
 //
 //  Writes generated WAV data to disk. SwiftAmbiente generates WAV directly; this
 //  writer currently passes WAV through verbatim and is the seam where future

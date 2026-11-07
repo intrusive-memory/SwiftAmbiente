@@ -1,35 +1,35 @@
 //
-//  AmbientaCommandTests.swift
-//  AmbientaTests
+//  AmbienteCommandTests.swift
+//  AmbienteCLITests
 //
 
 import Foundation
 import Testing
 
-@testable import AmbientaCLICore
+@testable import AmbienteCLICore
 @testable import SwiftAmbiente
 
-@Suite("ambienta CLI")
-struct AmbientaCommandTests {
+@Suite("ambiente CLI")
+struct AmbienteCommandTests {
 
   @Test("Version string is wired")
   func versionPresent() {
-    #expect(!AmbientaVersion.current.isEmpty)
+    #expect(!AmbienteCLIVersion.current.isEmpty)
   }
 
   @Test("Parses a prompt and duration")
   func parsesPromptAndDuration() throws {
-    let cmd = try AmbientaCommand.parse(["rain", "on", "a", "roof", "-d", "12"])
+    let cmd = try AmbienteCommand.parse(["rain", "on", "a", "roof", "-d", "12"])
     #expect(cmd.duration == 12)
     #expect(cmd.promptWords == ["rain", "on", "a", "roof"])
   }
 
   @Test("Guidance defaults to cfg 1.0 / 8 steps and is overridable")
   func parsesGuidance() throws {
-    let defaults = try AmbientaCommand.parse(["rain"])
+    let defaults = try AmbienteCommand.parse(["rain"])
     #expect(defaults.cfg == 1.0)
     #expect(defaults.steps == 8)
-    let custom = try AmbientaCommand.parse(["rain", "--cfg", "2.5", "--steps", "12"])
+    let custom = try AmbienteCommand.parse(["rain", "--cfg", "2.5", "--steps", "12"])
     #expect(custom.cfg == 2.5)
     #expect(custom.steps == 12)
   }
@@ -41,7 +41,7 @@ struct AmbientaCommandTests {
 
   @Test("Parses a scene preset flag")
   func parsesScene() throws {
-    let cmd = try AmbientaCommand.parse(["--scene", "forest"])
+    let cmd = try AmbienteCommand.parse(["--scene", "forest"])
     #expect(cmd.scene == "forest")
   }
 

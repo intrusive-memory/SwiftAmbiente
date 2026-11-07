@@ -21,7 +21,7 @@ integration plan, see **[AGENTS.md](AGENTS.md)**.
 # ✅ CORRECT
 make build
 make test
-xcodebuild build -scheme ambienta -destination 'platform=macOS,arch=arm64'
+xcodebuild build -scheme ambiente -destination 'platform=macOS,arch=arm64'
 
 # ❌ WRONG
 swift build
@@ -57,4 +57,4 @@ compilation) drops in without a build-system migration.
 **See [AGENTS.md](AGENTS.md) for:**
 - Architecture (the `AmbienteGenerator` backend abstraction)
 - The Stable Audio 3 Small SFX integration plan and **licensing obligations**
-- CLI (`ambienta`) usage and scene presets
+- CLI (`ambiente`) usage and scene presets

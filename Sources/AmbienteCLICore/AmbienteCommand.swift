@@ -1,8 +1,8 @@
 //
-//  AmbientaCommand.swift
-//  AmbientaCLICore
+//  AmbienteCommand.swift
+//  AmbienteCLICore
 //
-//  `ambienta` — generate an atmospheric / foley background bed from a text
+//  `ambiente` — generate an atmospheric / foley background bed from a text
 //  prompt or a built-in scene preset.
 //
 
@@ -11,11 +11,11 @@ import Foundation
 import SwiftAmbiente
 
 @available(macOS 10.15, macCatalyst 13, iOS 13, tvOS 13, watchOS 6, *)
-public struct AmbientaCommand: AsyncParsableCommand {
+public struct AmbienteCommand: AsyncParsableCommand {
   public init() {}
 
   public static let configuration = CommandConfiguration(
-    commandName: "ambienta",
+    commandName: "ambiente",
     abstract: "Generate atmospheric / foley background beds for your scene.",
     discussion: """
       Renders a background audio bed from a free-form prompt or a built-in scene
@@ -23,7 +23,7 @@ public struct AmbientaCommand: AsyncParsableCommand {
       installed, otherwise a procedural (filtered-noise) generator. Override the
       model CDN with ACERVO_CDN_BASE_URL.
       """,
-    version: "ambienta \(AmbientaVersion.current)"
+    version: "ambiente \(AmbienteCLIVersion.current)"
   )
 
   // MARK: - Scene / Prompt

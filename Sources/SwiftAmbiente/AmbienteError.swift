@@ -36,7 +36,7 @@ public enum AmbienteError: Error, LocalizedError, Sendable {
       return "Invalid duration: \(seconds)s. Duration must be greater than 0."
     case .unsupportedScene(let name):
       return
-        "Unsupported scene '\(name)'. Use `ambienta --list-scenes` to see the built-in presets, or pass a free-form text prompt."
+        "Unsupported scene '\(name)'. Use `ambiente --list-scenes` to see the built-in presets, or pass a free-form text prompt."
     }
   }
 }

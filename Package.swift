@@ -14,12 +14,12 @@ let package = Package(
       targets: ["SwiftAmbiente"]
     ),
     .library(
-      name: "AmbientaCLICore",
-      targets: ["AmbientaCLICore"]
+      name: "AmbienteCLICore",
+      targets: ["AmbienteCLICore"]
     ),
     .executable(
-      name: "ambienta",
-      targets: ["ambienta"]
+      name: "ambiente",
+      targets: ["ambiente"]
     ),
   ],
   dependencies: [
@@ -59,7 +59,7 @@ let package = Package(
       ]
     ),
     .target(
-      name: "AmbientaCLICore",
+      name: "AmbienteCLICore",
       dependencies: [
         "SwiftAmbiente",
         .product(name: "ArgumentParser", package: "swift-argument-parser"),
@@ -69,12 +69,12 @@ let package = Package(
       ]
     ),
     .executableTarget(
-      name: "ambienta",
+      name: "ambiente",
       dependencies: [
-        "AmbientaCLICore",
+        "AmbienteCLICore",
         .product(name: "ArgumentParser", package: "swift-argument-parser"),
       ],
-      path: "Sources/ambienta",
+      path: "Sources/ambiente",
       swiftSettings: [
         .enableUpcomingFeature("StrictConcurrency")
       ]
@@ -87,9 +87,9 @@ let package = Package(
       ]
     ),
     .testTarget(
-      name: "AmbientaTests",
+      name: "AmbienteCLITests",
       dependencies: [
-        "AmbientaCLICore",
+        "AmbienteCLICore",
         "SwiftAmbiente",
         .product(name: "ArgumentParser", package: "swift-argument-parser"),
       ],

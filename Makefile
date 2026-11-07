@@ -1,9 +1,9 @@
-# SwiftAmbiente / ambienta CLI Makefile
-# Build and install the ambienta CLI via xcodebuild (never `swift build`).
+# SwiftAmbiente / ambiente CLI Makefile
+# Build and install the ambiente CLI via xcodebuild (never `swift build`).
 
-SCHEME = ambienta
+SCHEME = ambiente
 TEST_SCHEME = SwiftAmbiente-Package
-BINARY = ambienta
+BINARY = ambiente
 BIN_DIR = ./bin
 DESTINATION = platform=macOS,arch=arm64
 DERIVED_DATA = $(HOME)/Library/Developer/Xcode/DerivedData
@@ -83,7 +83,7 @@ clean:
 	rm -rf $(DERIVED_DATA)/SwiftAmbiente-*
 
 help:
-	@echo "SwiftAmbiente / ambienta CLI Makefile"
+	@echo "SwiftAmbiente / ambiente CLI Makefile"
 	@echo ""
 	@echo "Usage: make [target]"
 	@echo ""
