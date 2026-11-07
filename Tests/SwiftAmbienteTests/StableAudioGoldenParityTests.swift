@@ -55,7 +55,7 @@ private enum GoldenParityFixture {
   static let prompt = "heavy rain on a tin roof"
   static let seed: UInt64 = 42
   static let settings = GenerationSettings(
-    durationSeconds: 5.0, steps: 8, cfgScale: 7.0, seed: seed)
+    durationSeconds: 5.0, steps: 8, cfgScale: 1.0, seed: seed)
   static let expectedFrames = 220_500  // 5.0 s × 44.1 kHz, trimmed exactly
 
   /// The documented parity tolerance (STRATEGY.md "Sortie 9 parity tolerance"):
@@ -159,7 +159,7 @@ struct StableAudioGoldenParityTests {
       // pipeline (same prompt, different seed) — proves the tolerance has teeth.
       let wrong = pipeline.generateWAV(
         prompt: GoldenParityFixture.prompt,
-        settings: GenerationSettings(durationSeconds: 5.0, steps: 8, cfgScale: 7.0, seed: 43),
+        settings: GenerationSettings(durationSeconds: 5.0, steps: 8, cfgScale: 1.0, seed: 43),
         config: config)
       let wrongDelta = AudioSpectralDelta.compare(
         candidate: try PCMWAV(data: wrong), reference: golden)
@@ -167,6 +167,20 @@ struct StableAudioGoldenParityTests {
         !GoldenParityFixture.withinTolerance(wrongDelta),
         "negative control (seed 43) unexpectedly within tolerance: \(wrongDelta)")
       print("[S9 golden parity] negative control seed 43 vs golden: \(wrongDelta)")
+
+      // Negative control: over-driven guidance. The Small SFX model is distilled
+      // to run at cfg 1.0; cfg 7.0 yields loud, clipped, garbled audio (the bug
+      // that shipped as the default before this fixture was re-recorded).
+      let overdriven = pipeline.generateWAV(
+        prompt: GoldenParityFixture.prompt,
+        settings: GenerationSettings(durationSeconds: 5.0, steps: 8, cfgScale: 7.0, seed: 42),
+        config: config)
+      let overdrivenDelta = AudioSpectralDelta.compare(
+        candidate: try PCMWAV(data: overdriven), reference: golden)
+      #expect(
+        !GoldenParityFixture.withinTolerance(overdrivenDelta),
+        "negative control (cfg 7.0) unexpectedly within tolerance: \(overdrivenDelta)")
+      print("[S9 golden parity] negative control cfg 7.0 vs golden: \(overdrivenDelta)")
     }
   }
 }

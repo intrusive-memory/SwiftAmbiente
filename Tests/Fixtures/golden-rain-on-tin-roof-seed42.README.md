@@ -17,6 +17,22 @@ ships, never enters `Package.swift`, and never enters CI. The repo/venv/weights
 live entirely **outside** this repository tree. This note exists so the fixture
 is fully reproducible from the recorded inputs.
 
+## Re-recorded 2026-11-07 at cfg 1.0 (supersedes the S4 cfg 7.0 capture)
+
+The original S4 fixture was captured with `--cfg 7.0` (MD5
+`17b33f1a5d74380eb5e805d62f664c26`). That is **not** how Stable Audio 3 Small SFX
+is meant to run: the reference CLI defaults to `--cfg 1.0` because the Small
+models are distilled for it. At cfg 7.0 the model is over-driven into loud
+(≈ −6 dBFS RMS), heavily clipped (≈ 4–13% of samples), garbled audio — confirmed
+by ear on the reference's own output. The parity gate faithfully matched Swift to
+that bad oracle, so the bug shipped as `GenerationSettings.cfgScale = 7.0`.
+
+Re-recorded on the same reference commit and the same mlx 0.32.0 venv — which
+first re-produced the old cfg 7.0 fixture byte-for-byte (MD5 `17b33f1a…`), proving
+an identical environment — then generated the cfg 1.0 fixture below, twice, with
+identical MD5s. Output is ≈ −39 dBFS RMS with zero clipped samples and a natural
+fade to digital near-silence in the last ~0.3 s.
+
 ## Determinism verification
 
 Generation is deterministic for a fixed prompt + seed. This fixture was captured
@@ -24,7 +40,7 @@ by the prior sortie run and **independently re-generated** during Sortie 4
 finalization; both runs produced a **byte-identical** WAV:
 
 ```
-MD5 (golden-rain-on-tin-roof-seed42.wav) = 17b33f1a5d74380eb5e805d62f664c26
+MD5 (golden-rain-on-tin-roof-seed42.wav) = 202dd1cf37ea6667ebd4e7a1389a35d7
 ```
 
 Any faithful re-run of the exact invocation below on Apple Silicon reproduces
@@ -67,7 +83,7 @@ provisions the `uv`-managed `.venv`):
   --decoder same-s \
   --seconds 5.0 \
   --steps 8 \
-  --cfg 7.0 \
+  --cfg 1.0 \
   --seed 42 \
   --out golden-rain-on-tin-roof-seed42.wav
 ```
@@ -79,7 +95,7 @@ provisions the `uv`-managed `.venv`):
 | prompt | `heavy rain on a tin roof` |
 | seed | `42` |
 | steps | `8` |
-| cfg | `7.0` (apg=1.0) |
+| cfg | `1.0` (the reference CLI default; apg=1.0 is inert at cfg 1.0) |
 | duration | `5.0` s (T_lat 54 → 5.02s, trimmed to exactly 5.0s) |
 | dit | `sm-sfx` |
 | decoder | `same-s` |
@@ -97,7 +113,7 @@ provisions the `uv`-managed `.venv`):
 | Frames | 220500 |
 | Duration | 5.0 s (exact) |
 | File size | 882044 bytes |
-| MD5 | `17b33f1a5d74380eb5e805d62f664c26` |
+| MD5 | `202dd1cf37ea6667ebd4e7a1389a35d7` |
 
 ## Reference environment (verification-only; does not ship)
 
