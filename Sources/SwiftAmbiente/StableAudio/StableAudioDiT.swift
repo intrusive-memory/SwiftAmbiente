@@ -23,7 +23,7 @@
 //  they appear in the SFX `model.safetensors` (no rename pass is needed: unlike
 //  the reference's torch-ckpt converter we fetch each tensor by its literal
 //  on-disk key). RMSNorm weights are stored as `.gamma`; 1×1 convs are stored
-//  `[out, in, 1]` and applied as a channel matmul. Weights are cast bf/fp32 → fp16
+//  `[out, in, 1]` and permuted to MLX's `[out, 1, in]` for `conv1d`. Weights are cast bf/fp32 → fp16
 //  to match the reference's default `dit_dtype=fp16` numeric path.
 //
 //  SCOPE (S8 boundary): this is the velocity network `v(x, t, cross, global)`.
@@ -100,8 +100,8 @@ struct StableAudioDiTLayerWeights {
 
 /// Full DiT weight set, cast to fp16.
 struct StableAudioDiTWeights {
-  let preprocessConv: MLXArray     // (io, io) — squeezed 1×1 conv
-  let postprocessConv: MLXArray    // (io, io)
+  let preprocessConv: MLXArray     // (io, 1, io) — MLX conv1d layout [out, k, in]
+  let postprocessConv: MLXArray    // (io, 1, io)
   let toCondEmbed0: MLXArray       // (E, condTokenDim)
   let toCondEmbed2: MLXArray       // (E, E)
   let toGlobalEmbed0: MLXArray     // (E, globalCondDim)
@@ -134,10 +134,11 @@ enum StableAudioDiTWeightLoader {
       }
       return a.asType(.float16)
     }
-    // 1×1 conv stored [out, in, 1]; squeeze the kernel axis to a plain [out, in]
-    // channel-mixing matrix.
+    // 1×1 conv stored PyTorch [out, in, 1]; permute to the MLX conv layout
+    // [out, 1, in] so it runs through `conv1d` exactly as the reference's
+    // `nn.Conv1d(kernel_size=1)` does.
     func fetchConv(_ key: String) throws -> MLXArray {
-      try fetch(key).reshaped([config.ioChannels, config.ioChannels])
+      try fetch(key).transposed(0, 2, 1)
     }
 
     var layers: [StableAudioDiTLayerWeights] = []
@@ -222,18 +223,19 @@ public final class StableAudioDiT {
     return StableAudioDiT(config: cfg, weights: w)
   }
 
-  /// `freqs = exp(linspace(0,1,dim/2) * (ln max − ln min) + ln min) * 2π`, fp32.
-  static func expoFourierFreqs(dim: Int, minFreq: Float, maxFreq: Float) -> MLXArray {
+  /// `freqs = exp(linspace(0,1,dim/2) * (ln max − ln min) + ln min) * 2 * π`, fp32,
+  /// computed with MLX ops in the reference's exact order
+  /// (`dit_mlx.py::ExpoFourierFeatures.__init__`) so it is bit-identical: the
+  /// Python float constants become fp32 scalars, and `* 2 * math.pi` is two
+  /// separate multiplies.
+  static func expoFourierFreqs(dim: Int, minFreq: Double, maxFreq: Double) -> MLXArray {
     let half = dim / 2
-    let logMin = logf(minFreq), logMax = logf(maxFreq)
-    var vals = [Float](repeating: 0, count: half)
-    // linspace(0,1,half): step 1/(half-1), endpoints inclusive.
-    let denom = Float(max(half - 1, 1))
-    for i in 0..<half {
-      let ramp = Float(i) / denom
-      vals[i] = expf(ramp * (logMax - logMin) + logMin) * 2.0 * Float.pi
-    }
-    return MLXArray(vals)  // fp32
+    let ramp = MLXArray.linspace(Float(0.0), Float(1.0), count: half)
+    let logMin = Foundation.log(minFreq), logMax = Foundation.log(maxFreq)
+    let freqs = MLX.exp(ramp * Float(logMax - logMin) + Float(logMin))
+    let out = (freqs * Float(2)) * Float(Double.pi)
+    MLX.eval(out)
+    return out
   }
 
   // MARK: Ops
@@ -243,9 +245,10 @@ public final class StableAudioDiT {
     MLX.matmul(x, w.transposed())
   }
 
-  /// Linear with bias.
+  /// Linear with bias: the fused `mx.addmm(b, x, W.T)` that MLX's `nn.Linear`
+  /// uses (a separate `matmul + b` rounds differently).
   private func linear(_ x: MLXArray, _ w: MLXArray, _ b: MLXArray) -> MLXArray {
-    MLX.matmul(x, w.transposed()) + b
+    MLX.addMM(b, x, w.transposed())
   }
 
   /// RMSNorm matching `mx.fast.rms_norm` (fp32 accumulation inside). Weight is
@@ -426,9 +429,9 @@ public final class StableAudioDiT {
 
     let globalEmbed = globalPre + tEmbed  // (B, E)
 
-    // preprocess 1×1 conv (channel matmul) + residual, on channels-last.
+    // preprocess 1×1 conv + residual, on channels-last.
     let xLC = x.transposed(0, 2, 1)  // (B, T, io)
-    let xPP = MLX.matmul(xLC, weights.preprocessConv.transposed()) + xLC
+    let xPP = MLX.conv1d(xLC, weights.preprocessConv) + xLC
 
     // Match the reference: the text-to-audio zero local-add-cond is fp32 (its
     // per-block MLP bias path then promotes the residual stream to fp32 exactly
@@ -438,7 +441,7 @@ public final class StableAudioDiT {
 
     let h = transformer(xPP, context: context, globalEmbed: globalEmbed, localZeros: local)
 
-    let out = MLX.matmul(h, weights.postprocessConv.transposed()) + h  // (B, T, io)
+    let out = MLX.conv1d(h, weights.postprocessConv) + h  // (B, T, io)
     return out.transposed(0, 2, 1)  // (B, io, T)
   }
 }

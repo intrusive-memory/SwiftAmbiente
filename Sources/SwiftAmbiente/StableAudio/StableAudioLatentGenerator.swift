@@ -30,6 +30,9 @@ public final class StableAudioLatentGenerator {
   /// Audio samples represented by one latent position
   /// (`PatchedPretransform downsample × SAME 16× expansion`).
   public static let samplesPerLatent = 4096
+  /// The reference CLI's default `--apg` (adaptive projected guidance). The S4
+  /// golden fixture was captured with this value.
+  public static let defaultAPG: Float = 1.0
 
   public let config: StableAudioModelConfig
   let dit: StableAudioDiT
@@ -48,7 +51,14 @@ public final class StableAudioLatentGenerator {
 
   /// Load every component from an Acervo-resolved SFX model directory.
   public static func load(fromModelDirectory modelDir: URL) throws -> StableAudioLatentGenerator {
-    let assets = try StableAudioModelAssets.load(fromModelDirectory: modelDir)
+    try load(assets: StableAudioModelAssets.load(fromModelDirectory: modelDir), modelDirectory: modelDir)
+  }
+
+  /// Build from already-loaded assets (lets the S9 pipeline share one weight map
+  /// between the DiT and the SAME-S decoder).
+  static func load(assets: StableAudioModelAssets, modelDirectory modelDir: URL) throws
+    -> StableAudioLatentGenerator
+  {
     let dit = try StableAudioDiT.load(weights: assets.weights, modelConfig: assets.config)
     let conditioner = try StableAudioConditioner.load(from: assets.weights)
     let textConditioner = try T5GemmaTextConditioner.load(fromModelDirectory: modelDir)
@@ -70,8 +80,18 @@ public final class StableAudioLatentGenerator {
   /// `key(seed)` and the sampler with `key(seed + 1)`, exactly as the reference,
   /// so the same seed reproduces the same latent and different seeds diverge.
   ///
+  /// - Parameter apg: adaptive projected guidance strength, matching the
+  ///   reference's `--apg` (default ``defaultAPG`` = 1.0, the value the golden
+  ///   fixture was captured with). `≤ 0` gives plain CFG; `≥ 1` uses only the
+  ///   component of the guidance difference orthogonal to the conditional
+  ///   prediction; values in between blend the two. Ignored when `cfgScale == 1`.
+  /// - Parameter onStep: optional per-step observer (step index, latent).
   /// - Returns: an evaluated `(1, io_channels, T_lat)` fp16 latent.
-  public func generateLatent(prompt: String, settings: GenerationSettings) -> MLXArray {
+  public func generateLatent(
+    prompt: String, settings: GenerationSettings,
+    apg: Float = StableAudioLatentGenerator.defaultAPG,
+    onStep: ((Int, MLXArray) -> Void)? = nil
+  ) -> MLXArray {
     let dtype: DType = .float16
     let ioChannels = config.ioChannels
     let tLat = Self.latentLength(forSeconds: settings.durationSeconds)
@@ -118,15 +138,27 @@ public final class StableAudioLatentGenerator {
       let x32 = x.asType(.float32)
       let condD = x32 - condV.asType(.float32) * sigma
       let uncondD = x32 - uncondV.asType(.float32) * sigma
-      let diff = condD - uncondD  // apg ≤ 0 → plain CFG (no APG projection)
-      let cfgD = condD + (cfg - 1.0) * diff
+      let diff = condD - uncondD
+      let cfgDiff: MLXArray
+      if apg <= 0.0 {
+        cfgDiff = diff  // plain CFG
+      } else {
+        // APG: project diff onto the direction orthogonal to cond_d (per sample,
+        // over (C, T)). fp32 throughout, exactly as the reference.
+        let norm = MLX.sqrt((condD * condD).sum(axes: [-2, -1], keepDims: true))
+        let unit = condD / MLX.maximum(norm, MLXArray(Float(1e-8)))
+        let parallel = (diff * unit).sum(axes: [-2, -1], keepDims: true) * unit
+        let diffOrth = diff - parallel
+        cfgDiff = apg >= 1.0 ? diffOrth : (apg * diffOrth + (1.0 - apg) * diff)
+      }
+      let cfgD = condD + (cfg - 1.0) * cfgDiff
       let cfgV = (x32 - cfgD) / sigma
       return cfgV.asType(x.dtype)
     }
 
     // ── Sample ──
     let latent = StableAudioFlowSampler.sampleFlowPingpong(
-      x: noise, sigmas: sigmas, seed: seed &+ 1, modelFn: modelFn)
+      x: noise, sigmas: sigmas, seed: seed &+ 1, modelFn: modelFn, onStep: onStep)
     MLX.eval(latent)
     return latent
   }

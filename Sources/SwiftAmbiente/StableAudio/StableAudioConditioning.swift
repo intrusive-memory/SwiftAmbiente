@@ -32,7 +32,8 @@ public struct SecondsTotalEmbedder {
   let minVal: Float
   let maxVal: Float
   let fourierDim: Int
-  /// Precomputed `freqs = exp(linspace(0,1,dim/2)·(ln max − ln min)+ln min)·2π`.
+  /// Precomputed `freqs = exp(arange(dim/2)/(dim/2 − 1)·(ln max − ln min) + ln min)`
+  /// (no 2π — the reference applies `* 2 * π` to `t · freqs` at call time).
   let freqs: MLXArray   // (fourierDim/2,) fp32
 
   public init(
@@ -44,15 +45,29 @@ public struct SecondsTotalEmbedder {
     self.minVal = minVal
     self.maxVal = maxVal
     self.fourierDim = fourierDim
-    self.freqs = StableAudioDiT.expoFourierFreqs(dim: fourierDim, minFreq: 0.5, maxFreq: 10000.0)
+    self.freqs = Self.expoFreqs(dim: fourierDim, minFreq: 0.5, maxFreq: 10000.0)
+  }
+
+  /// `sa3_pipeline.expo_fourier_features` frequencies, with MLX ops in the
+  /// reference's exact order (bit-identical): `ramp = arange(half, fp32) /
+  /// max(half − 1, 1)`, `freqs = exp(ramp · (ln max − ln min) + ln min)`, the
+  /// Python float constants becoming fp32 scalars.
+  static func expoFreqs(dim: Int, minFreq: Double, maxFreq: Double) -> MLXArray {
+    let half = dim / 2
+    let ramp = MLXArray.arange(half, dtype: .float32) / Float(max(half - 1, 1))
+    let logMin = Foundation.log(minFreq), logMax = Foundation.log(maxFreq)
+    let freqs = MLX.exp(ramp * Float(logMax - logMin) + Float(logMin))
+    MLX.eval(freqs)
+    return freqs
   }
 
   /// `seconds → (1, 1, 768)` fp32.
   public func callAsFunction(_ seconds: Float) -> MLXArray {
     let clamped = min(max(seconds, minVal), maxVal)
     let norm = (clamped - minVal) / (maxVal - minVal)
-    let t = MLXArray([norm])  // (1,) fp32
-    let args = t.expandedDimensions(axis: 1) * freqs  // (1, half)
+    let t = MLXArray([norm]).reshaped([-1, 1])  // (1, 1) fp32
+    // `t * freqs * 2 * math.pi`, evaluated left to right as in the reference.
+    let args = ((t * freqs) * Float(2)) * Float(Double.pi)  // (1, half)
     let ff = MLX.concatenated([MLX.cos(args), MLX.sin(args)], axis: -1)  // (1, fourierDim)
     let out = MLX.matmul(ff, weight.transposed()) + bias  // (1, 768)
     return out.expandedDimensions(axis: 1)  // (1, 1, 768)

@@ -30,14 +30,17 @@ public enum StableAudioFlowSampler {
   /// Default sampling-schedule warp for SA3 (`logsnr_shift`, rate 0 → no
   /// sequence-length dependence). Maps `t∈[0,1]` through log-SNR space:
   /// `t_out = sigmoid(-(logsnr_end − t·(logsnr_end − anchor)))`, endpoints
-  /// preserved exactly. Operates on Swift `Float` (the schedule is tiny).
+  /// preserved exactly. Computed with MLX ops (fp32) in the reference's exact
+  /// order so the schedule is bit-identical to `sa3_pipeline.logsnr_shift`.
   static func logsnrShift(
-    _ t: Float, anchorLogsnr: Float = -6.2, logsnrEnd: Float = 2.0
-  ) -> Float {
-    if t <= 0 { return 0 }
-    if t >= 1 { return 1 }
-    let logsnr = logsnrEnd - t * (logsnrEnd - anchorLogsnr)
-    return 1.0 / (1.0 + expf(logsnr))  // sigmoid(-logsnr)
+    _ t: MLXArray, anchorLogsnr: Double = -6.2, logsnrEnd: Double = 2.0
+  ) -> MLXArray {
+    let t32 = t.asType(.float32)
+    let logsnr = Float(logsnrEnd) - t32 * Float(logsnrEnd - anchorLogsnr)
+    var tOut = MLX.sigmoid(-logsnr)
+    tOut = MLX.where(t32 .<= Float(0), MLX.zeros(like: tOut), tOut)
+    tOut = MLX.where(t32 .>= Float(1), MLX.ones(like: tOut), tOut)
+    return tOut
   }
 
   /// Linear `t` from `sigmaMax → 0` over `steps+1` points, optionally warped by
@@ -47,19 +50,13 @@ public enum StableAudioFlowSampler {
     steps: Int, sigmaMax: Float = 1.0, useLogsnrShift: Bool = true
   ) -> [Float] {
     precondition(steps >= 1, "steps must be ≥ 1")
-    let n = steps + 1
-    // linspace(sigmaMax, 0, n): endpoints inclusive.
-    var t = [Float](repeating: 0, count: n)
-    let denom = Float(n - 1)
-    for i in 0..<n {
-      t[i] = sigmaMax + (0.0 - sigmaMax) * (Float(i) / denom)
-    }
+    var t = MLXArray.linspace(sigmaMax, Float(0.0), count: steps + 1)
     if useLogsnrShift {
-      for i in 0..<n { t[i] = logsnrShift(t[i]) }
+      t = logsnrShift(t)
       // Re-anchor the start to sigmaMax (matches the reference's concat).
-      t[0] = sigmaMax
+      t = MLX.concatenated([MLXArray([sigmaMax]), t[1...]], axis: 0)
     }
-    return t
+    return t.asArray(Float.self)
   }
 
   /// Ping-pong sampler for rf_denoiser models.
@@ -76,10 +73,14 @@ public enum StableAudioFlowSampler {
   ///   - sigmas: the schedule from ``buildPingpongSchedule(steps:sigmaMax:useLogsnrShift:)``.
   ///   - seed: the sampler PRNG seed (the reference passes `user_seed + 1`).
   ///   - modelFn: `(x, t) → v` velocity prediction (CFG is composed by the caller).
+  ///   - onStep: optional observer called after each step with the 0-based step
+  ///     index and the evaluated latent (the reference's `on_step` hook; used by
+  ///     the parity diagnostics to compare per-step latents).
   /// - Returns: the sampled latent `(B, io, T_lat)`.
   public static func sampleFlowPingpong(
     x xInit: MLXArray, sigmas: [Float], seed: UInt64,
-    modelFn: (MLXArray, MLXArray) -> MLXArray
+    modelFn: (MLXArray, MLXArray) -> MLXArray,
+    onStep: ((Int, MLXArray) -> Void)? = nil
   ) -> MLXArray {
     var x = xInit
     var key = MLXRandom.key(seed)
@@ -106,6 +107,7 @@ public enum StableAudioFlowSampler {
         x = denoised
       }
       MLX.eval(x)
+      onStep?(i, x)
     }
     return x
   }

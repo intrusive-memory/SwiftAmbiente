@@ -244,7 +244,10 @@ one forward over `cat([x,x])`; with no negative prompt the uncond branch uses
 **zero cross-attn embeddings** (`zeros_like(cross_attn)`, matching upstream). We
 implement plain CFG (`cfg_d = cond_d + (cfg−1)·(cond_d − uncond_d)`); the
 reference's optional APG projection is disabled (`apg ≤ 0`) since
-`GenerationSettings` exposes no APG knob.
+`GenerationSettings` exposes no APG knob. **⚠️ Corrected in S9:** the reference
+CLI's `--apg` *defaults to 1.0* and the golden fixture was captured with
+`apg=1.0`, so plain CFG cannot match it; S9 adds APG with default 1.0 (see the
+Sortie 9 parity record below).
 
 **`durationSeconds → T_lat`.** `T_lat = max(1, ceil(seconds · 44100 / 4096))`
 (`SAMPLES_PER_LATENT = 4096`), the reference's decoder-independent natural-ceil.
@@ -323,4 +326,146 @@ patched-pretransform unpatch (`rearrange("b (c h) l -> b c (l h)", h=256)`) →
 WAV. `512 = 2 (stereo) × 256 (patch)`, giving `samplesPerLatent = 16·256 = 4096`
 (consistent with S8).
 
-<!-- Sortie 9: parity tolerance + observed delta recorded here after the build. -->
+## Sortie 9 parity tolerance + observed delta (golden-output gate)
+
+**Result: PASS.** Swift text→WAV (`StableAudioPipeline`: T5Gemma → DiT ping-pong
+sampler → `StableAudioSAMESDecoder` → unpatch → trim → `WAVWriter`) with the
+golden invocation (`"heavy rain on a tin roof"`, seed 42, 5.0 s, 8 steps, cfg 7.0,
+apg 1.0) vs `Tests/Fixtures/golden-rain-on-tin-roof-seed42.wav`:
+
+| Metric | Tolerance | **Observed (Swift)** |
+|---|---|---|
+| spectrogram dB error | ≤ 1.2 dB | **0.278 dB** |
+| long-term spectrum (LTAS) dB error | ≤ 0.4 dB | **0.056 dB** |
+| RMS relative error | ≤ 0.06 | **0.0099** |
+| frame-RMS envelope correlation | ≥ 0.97 | **0.9978** |
+
+The Swift output is *closer* to the golden than every non-golden build of the
+official reference itself (best of those: 0.345 dB / envCorr 0.9951). Gate:
+`StableAudioGoldenParityTests.goldenParity` (model-gated; skips when the model is
+absent). The produced WAV passes the WAV contract in the same test (44-byte
+header, 44.1 kHz, stereo, 16-bit, 220,500 frames, non-empty).
+
+### Why the gate is spectral, not sample-exact (measured, not assumed)
+
+Sample-exact parity is **not achievable** for this fixture, by Swift or by the
+reference itself:
+
+1. **The official reference does not reproduce its own golden on other MLX
+   builds.** The unchanged reference at commit `0385302`, golden invocation, run
+   under every PyPI `mlx` wheel ≥ 0.30 (its floor), yields **5 distinct WAVs**:
+   only 0.32.0–0.32.2 reproduce the golden MD5 `17b33f1a…`; 0.30.0–0.30.4,
+   0.30.5–0.30.6, 0.31.0–0.31.2 and 0.32.3–0.32.4 each differ. All are
+   legitimate outputs of the same official network.
+2. **The pinned mlx-swift is a different MLX build.** mlx-swift 0.31.3 wraps MLX
+   core **v0.31.1**; the golden was made with 0.32.0. No mlx-swift release wraps
+   0.32.0 (0.32.2/0.32.3 → core 0.32.2; 0.33.0 → core 0.32.4).
+3. **Kernel-build rounding.** On identical inputs, Swift (SwiftPM-compiled Metal)
+   vs the same-core Python wheel are bit-identical for SDPA (fp16/fp32), matmul,
+   `rms_norm`, `tanh`, `silu` — but **`mx.fast.rope` differs** (113/241,664 fp16
+   and 32,937/241,664 fp32 elements, max 1.6e-5 fp32), also via the explicit-
+   `freqs` path with bit-identical frequency tables, i.e. the in-kernel
+   `cos/sin` compile differently. No API choice removes it.
+4. **The SAME-S decoder is chaotic.** Perturbing the reference latent by a random
+   1e-6 / 1e-4 / 1e-3 relative amount changes the decoded patches by relL2
+   2.5e-2 / 6.4e-2 / 3.5e-1. So ulp-level drift in the 8-step fp16 sampler (which
+   re-noises each step) becomes a ~30–50 % sample-wise waveform difference while
+   the sound itself (spectrum, dynamics, loudness) is preserved.
+
+### Tolerance — derivation (fixed before Swift was measured)
+
+Metric (`Tests/SwiftAmbienteTests/GoldenAudioComparison.swift`): both WAVs
+decoded to float (`/32767`), per channel, worst channel reported. Hann STFT,
+frame 2048 / hop 1024; power summed into 32 log-spaced bands 40 Hz–20 kHz;
+`dB = 10·log10(E + 1e-10)`. *spectrogram dB* = mean |ΔdB| over (frame, band);
+*LTAS dB* = mean over bands of |Δ(time-mean dB)|; *RMS relative* =
+|RMS_c − RMS_g|/RMS_g; *envelope correlation* = Pearson r of per-frame RMS.
+
+Tolerance = **the worst delta the official reference itself shows vs the golden
+across MLX builds 0.30.5 … 0.32.4, × 1.5**, i.e. "the same network differing only
+in MLX floating-point rounding":
+
+| Reference build vs golden | spectrogram dB | LTAS dB | RMS rel | envCorr |
+|---|---|---|---|---|
+| mlx 0.32.0 / 0.32.1 / 0.32.2 | 0 | 0 | 0 | 1.0 |
+| mlx 0.31.0–0.31.2 (= pinned mlx-swift core) | 0.345 | 0.069 | 0.0235 | 0.9951 |
+| mlx 0.30.5–0.30.6 | 0.405 | 0.078 | 0.0139 | 0.9969 |
+| mlx 0.32.3–0.32.4 | **0.788** | **0.237** | **0.0377** | **0.9825** |
+| → tolerance (worst × 1.5) | **≤ 1.2** | **≤ 0.4** | **≤ 0.06** | **≥ 0.97** |
+| *(excluded outlier: mlx 0.30.0–0.30.4)* | *4.42* | *2.00* | *0.151* | *0.593* |
+
+mlx 0.30.0–0.30.4 behaves qualitatively differently (envelope r = 0.59, halfway
+to the negative controls) and is **excluded** — including it would loosen the
+gate roughly 4×. **Negative controls** (official reference, mlx 0.32.0, one
+parameter changed) are all far outside the tolerance, so the gate has teeth:
+
+| Control vs golden | spectrogram dB | LTAS dB | RMS rel | envCorr |
+|---|---|---|---|---|
+| seed 43 | 15.08 | 1.15 | 0.479 | 0.101 |
+| seed 1234 | 12.67 | 3.45 | 0.556 | −0.012 |
+| prompt "gentle rain on a tin roof" | 13.71 | 8.40 | 0.942 | 0.141 |
+| steps 7 | 11.07 | 2.60 | 0.234 | 0.225 |
+| apg 0 (plain CFG — the S8 behaviour) | 11.08 | 3.46 | 0.620 | 0.378 |
+
+The parity test also runs an in-suite negative control (Swift, seed 43:
+14.68 dB / envCorr 0.109) and asserts it is **rejected**.
+
+### Per-stage divergence (Swift vs reference, how it was located)
+
+Reference intermediates were dumped from the reference's own modules (a script
+mirroring `sa3_mlx.py` that reproduces the golden PCM byte-for-byte) and
+compared with Swift dumps. relL2 = ‖a−b‖/‖b‖; "golden run" = mlx 0.32.0.
+
+| Stage | Swift vs golden run | Swift vs ref @ mlx 0.31.1 | ref 0.31.1 vs golden run |
+|---|---|---|---|
+| T5Gemma embeddings `(1,256,768)` | **exact** | exact | exact |
+| cross-attn + `seconds_total` token | **exact** | exact | exact |
+| sigma schedule | **exact** | exact | exact |
+| initial noise `key(42)` | **exact** | exact | exact |
+| latent after step 1 | 6.2e-6 (11/13,824 differ) | 1.8e-6 (7) | 6.1e-6 |
+| final latent `(1,256,54)` | 1.39e-3 | 1.55e-3 | 1.70e-3 |
+| decoder alone (fed the golden-run latent) | 6.6e-3 | — | — |
+| waveform (sample-wise) | 0.30 | — | 0.41 |
+
+Divergence first enters inside DiT block 0's self-attention (its input is
+bit-exact; of the primitives it uses, RoPE is the one found to differ at the
+kernel level), at the fp16-ulp level, and
+grows through the 8 sampler steps — the same way, and by the same order of
+magnitude, as the reference's own drift between MLX builds.
+
+**Weights — all bit-exact except one ulp-level fold.** Against the
+`stable-audio-3-optimized` `.npz` the fixture used: DiT (441 tensors, F32→fp16)
+and T5Gemma (137, bf16→fp16) map **bit-exactly**; decoder blocks/project_in/
+new_tokens/running_std/mapping.bias bit-exact; the folded `mapping.weight`
+(`g·v/‖v‖`) differs by ≤ 2.2e-8 (1 ulp) in ~60 % of elements — no fold formula
+reproduces the export's rounding — and its effect on decoded patches, measured by
+substituting it into the Python decoder, is relL2 **2.6e-7** (negligible).
+
+### Corrections to S8 code made to close the gate (all found by stage-diffing)
+
+1. **APG** (`StableAudioLatentGenerator.generateLatent(apg:)`, default 1.0 =
+   reference default and the fixture's value) — S8 ran plain CFG.
+2. **`seconds_total` Fourier features** now use MLX ops in the reference's order
+   (`arange/127`, `t·freqs·2·π` left-to-right) → conditioning bit-exact (was
+   ~1-ulp off in 398/768 elements).
+3. **DiT timestep Fourier features** and the **ping-pong schedule** computed with
+   MLX ops (`linspace`, `exp`, `sigmoid`) instead of Swift `Float` math.
+4. **Biased Linears use `addMM`** (what `mlx.nn.Linear` does) instead of
+   `matmul + b`; the **1×1 pre/post-process convs run through `conv1d`** with the
+   MLX `[out, 1, in]` layout instead of a squeezed matmul.
+
+### Notes for later sorties
+
+- **True byte parity is not on the table with the current pin.** Even the
+  reference only reproduces the golden on mlx 0.32.0–0.32.2; mlx-swift
+  0.32.2/0.32.3 wrap core 0.32.2, but the RoPE kernel-compile difference (point
+  3) would very likely remain. Changing the S5 exact pin was **not** done here.
+- **Model staging for tests:** the xctest runner is denied read access to
+  `~/Library/Group Containers/…` (macOS container protection, `EPERM`), so the
+  model-present runs use an APFS clone at `/tmp/acervo-staging`
+  (`cp -cR …/SharedModels/stabilityai_stable-audio-3-small-sfx /tmp/acervo-staging/`)
+  with `TEST_RUNNER_ACERVO_MODELS_DIR=/tmp/acervo-staging make test`, as S8 did.
+- **Clipping:** the reference audio peaks at ≈13 (RMS 0.50) before the `[-1,1]`
+  clip in `save_wav`; `WAVWriter` clamps identically but rounds where the
+  reference truncates (`astype(int16)`), a ≤ 1-LSB difference, well below the
+  tolerance.
