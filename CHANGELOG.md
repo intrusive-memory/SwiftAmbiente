@@ -13,11 +13,14 @@ The active changelog for SwiftAmbiente lives in two places:
 
 This file is preserved as a stub so existing links don't 404.
 
-## 0.1.0-dev (unreleased)
+## 0.1.0 (2026-11-07, pre-release)
 
 - Initial scaffold mirroring SwiftVoxAlta conventions.
 - `AmbienteGenerator` backend abstraction.
 - `ProceduralAmbienteGenerator` — interim, dependency-free filtered-noise engine.
-- `ambienta` CLI with scene presets and free-form prompts.
-- Stable Audio 3 Small SFX integration staged (see
-  `REQUIREMENTS-stable-audio-integration.md`).
+- `ambiente` CLI with scene presets and free-form prompts.
+- Stable Audio 3 Small SFX neural backend (`StableAudioGenerator`, MLX Swift):
+  T5Gemma conditioning, DiT flow-matching sampler with APG, SAME-S decoder;
+  golden-output parity gate; on-demand model download via SwiftAcervo;
+  model-gated integration CI; README Licensing + NOTICE for the Stability AI
+  Community License and Gemma Terms of Use.

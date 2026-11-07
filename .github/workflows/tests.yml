@@ -9,15 +9,17 @@ jobs:
   # download is required and the full suite runs on CI.
   unit-tests:
     name: Unit Tests
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 30
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
-      - name: Show Swift version
-        run: swift --version
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
 
       - name: Run unit tests
         run: make test-unit

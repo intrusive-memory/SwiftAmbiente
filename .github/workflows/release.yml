@@ -14,17 +14,17 @@ permissions:
   contents: write
 
 env:
-  BINARY_NAME: ambienta
-  SCHEME: ambienta
+  BINARY_NAME: ambiente
+  SCHEME: ambiente
 
 jobs:
   build-and-release:
     name: Build Release Binary
-    runs-on: macos-26
+    runs-on: xcode-27
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Determine version tag
         id: version
@@ -47,16 +47,17 @@ jobs:
 
       - name: Verify binary exists
         run: |
-          test -f ./bin/ambienta
-          echo "Binary verified."
+          test -f ./bin/ambiente
+          test -d ./bin/mlx-swift_Cmlx.bundle
+          echo "Binary and Metal bundle verified."
 
       - name: Package tarball
         id: package
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          TARBALL="ambienta-${VERSION}-arm64-macos.tar.gz"
+          TARBALL="ambiente-${VERSION}-arm64-macos.tar.gz"
           cd bin
-          tar czf "../${TARBALL}" ambienta
+          tar czf "../${TARBALL}" ambiente mlx-swift_Cmlx.bundle
           cd ..
           echo "tarball=$TARBALL" >> "$GITHUB_OUTPUT"
           echo "Packaged: $TARBALL"
@@ -83,21 +84,8 @@ jobs:
         if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v7
         with:
-          name: ambienta-release
+          name: ambiente-release
           path: |
             ${{ steps.package.outputs.tarball }}
             ${{ steps.package.outputs.tarball }}.sha256
 
-      - name: Trigger Homebrew Tap Update
-        if: github.event_name == 'release'
-        uses: peter-evans/repository-dispatch@v4
-        with:
-          token: ${{ secrets.DEPLOY_TOKEN }}
-          repository: intrusive-memory/homebrew-tap
-          event-type: formula-update
-          client-payload: |
-            {
-              "formula": "ambienta",
-              "version": "${{ steps.version.outputs.tag }}",
-              "repo": "${{ github.repository }}"
-            }

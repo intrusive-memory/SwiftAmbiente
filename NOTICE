@@ -1,0 +1,54 @@
+SwiftAmbiente
+Copyright (c) 2026 Intrusive Memory. Licensed under the MIT License (see LICENSE).
+
+The MIT License covers only the SwiftAmbiente source code in this repository.
+It does NOT cover the Stable Audio model weights or the T5Gemma text encoder.
+Those are not vendored here; they are downloaded at runtime (via SwiftAcervo)
+and are governed by the licenses below. The procedural generator uses no model
+weights and carries none of these obligations.
+
+--------------------------------------------------------------------------
+Stable Audio 3 Small SFX (stabilityai/stable-audio-3-small-sfx)
+--------------------------------------------------------------------------
+This Stability AI Model is licensed under the Stability AI Community License,
+Copyright (c) Stability AI Ltd. All Rights Reserved
+
+Powered by Stability AI
+
+Obligations that follow the neural backend into any product embedding it
+(Stability AI Community License, Section 4(a), 4(b)):
+  - Provide a copy of the Community License (LICENSE.md, shipped with the
+    weights) to third parties you distribute the model or a product using it to.
+  - Keep the attribution notice above in a "Notice" text file distributed with
+    those copies.
+  - Prominently display "Powered by Stability AI" on a related website, user
+    interface, blogpost, about page, or product documentation.
+  - Comply with applicable law and Stability AI's Acceptable Use Policy
+    (https://stability.ai/use-policy). Do not use the model or its outputs to
+    create or improve a foundational generative AI model.
+  - Commercial use requires registration at https://stability.ai/community-license
+    and ends automatically once you and your affiliates exceed US$1,000,000 in
+    annual revenue (Section 3); an enterprise license must then be requested
+    from Stability AI (https://stability.ai/enterprise).
+
+--------------------------------------------------------------------------
+T5Gemma text encoder (t5gemma-b-b-ul2), bundled inside the model
+--------------------------------------------------------------------------
+Gemma is provided under and subject to the Gemma Terms of Use found at ai.google.dev/gemma/terms
+
+Obligations that follow the neural backend into any product embedding it
+(Gemma Terms of Use, Sections 3.1 and 3.2):
+  - Prohibited-use pass-through: the use restrictions in Section 3.2 (the Gemma
+    Prohibited Use Policy, https://ai.google.dev/gemma/prohibited_use_policy,
+    and compliance with applicable law) must be included as an enforceable
+    provision in any agreement (license agreement, terms of use, etc.)
+    governing use and/or distribution of Gemma or Model Derivatives, and
+    subsequent users must be given notice that they are subject to them.
+  - Give all third-party recipients a copy of the Gemma Terms of Use
+    (LICENSE_GEMMA.md, shipped with the weights).
+  - Accompany Distributions (other than through a Hosted Service) with a
+    "Notice" text file containing the Gemma notice line above.
+  - Mark any modified files with prominent notices that you modified them.
+
+This file documents obligations. It is not legal advice. See the README
+"Licensing" section for items to verify with counsel before a commercial ship.

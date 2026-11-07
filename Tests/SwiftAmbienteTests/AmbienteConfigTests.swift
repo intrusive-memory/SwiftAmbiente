@@ -23,7 +23,7 @@ struct AmbienteConfigTests {
   @Test("Model repo round-trips through its slug")
   func modelSlugRoundTrip() {
     #expect(StableAudioModelRepo(slug: "sfx") == .smallSFX)
-    #expect(StableAudioModelRepo(slug: "music") == .smallMusic)
+    #expect(StableAudioModelRepo(slug: "music") == nil)
     #expect(StableAudioModelRepo(slug: "nope") == nil)
   }
 

@@ -1,0 +1,85 @@
+# Model-gated integration tests. Restores the Stable Audio model through the
+# Acervo cache (actions/cache), primes it from the CDN on a miss, then runs the
+# full SwiftAmbiente test target. Model-gated tests skip on runners without the
+# model (see Tests/SwiftAmbienteTests), so the unit-tests workflow stays green
+# without it; here they run for real.
+name: Integration Tests
+
+on:
+  pull_request:
+    branches: [main, development]
+  workflow_dispatch:
+
+concurrency:
+  group: integration-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  integration:
+    name: Integration Tests (real models)
+    runs-on: xcode-27
+    timeout-minutes: 90
+
+    env:
+      # Plain directory (the xctest runner cannot read Group Containers), kept
+      # inside the workspace so actions/cache can snapshot it.
+      ACERVO_MODELS_DIR: ${{ github.workspace }}/.acervo-ci-models
+      # Used by the vendored primer / cache-key scripts.
+      ACERVO_CDN_BASE: https://cdn.intrusive-memory.productions/models
+      # Required by SwiftAcervo (no trailing slash), else it calls fatalError.
+      ACERVO_CDN_BASE_URL: https://cdn.intrusive-memory.productions/models
+      ACERVO_CI_MODELS: |
+        stabilityai_stable-audio-3-small-sfx
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Compute model cache key
+        id: modelkey
+        run: |
+          echo "value=$(bash .github/scripts/acervo-ci-cache-key.sh)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore model cache
+        id: modelcache
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.ACERVO_MODELS_DIR }}
+          key: acervo-models-${{ runner.os }}-${{ steps.modelkey.outputs.value }}
+
+      - name: Prime models from CDN (cache miss)
+        if: steps.modelcache.outputs.cache-hit != 'true'
+        run: bash .github/scripts/acervo-ci-prime.sh
+
+      - name: Resolve packages
+        run: |
+          xcodebuild -resolvePackageDependencies \
+            -scheme SwiftAmbiente-Package \
+            -skipPackagePluginValidation
+
+      - name: Build for testing
+        run: |
+          xcodebuild build-for-testing \
+            -scheme SwiftAmbiente-Package \
+            -destination 'platform=macOS,arch=arm64' \
+            -skipPackagePluginValidation \
+            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES COMPILER_INDEX_STORE_ENABLE=NO
+
+      - name: Integration tests
+        env:
+          # xcodebuild strips TEST_RUNNER_ and forwards these into the xctest
+          # runner process.
+          TEST_RUNNER_ACERVO_MODELS_DIR: ${{ env.ACERVO_MODELS_DIR }}
+          TEST_RUNNER_ACERVO_OFFLINE: "1"
+          TEST_RUNNER_ACERVO_CDN_BASE_URL: ${{ env.ACERVO_CDN_BASE_URL }}
+        run: |
+          xcodebuild test-without-building \
+            -scheme SwiftAmbiente-Package \
+            -destination 'platform=macOS,arch=arm64' \
+            -skipPackagePluginValidation \
+            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES COMPILER_INDEX_STORE_ENABLE=NO

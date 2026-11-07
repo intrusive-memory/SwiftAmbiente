@@ -1,9 +1,9 @@
-# SwiftAmbiente / ambienta CLI Makefile
-# Build and install the ambienta CLI via xcodebuild (never `swift build`).
+# SwiftAmbiente / ambiente CLI Makefile
+# Build and install the ambiente CLI via xcodebuild (never `swift build`).
 
-SCHEME = ambienta
+SCHEME = ambiente
 TEST_SCHEME = SwiftAmbiente-Package
-BINARY = ambienta
+BINARY = ambiente
 BIN_DIR = ./bin
 DESTINATION = platform=macOS,arch=arm64
 DERIVED_DATA = $(HOME)/Library/Developer/Xcode/DerivedData
@@ -28,7 +28,14 @@ release: resolve
 	@PRODUCT_DIR=$$(find $(DERIVED_DATA)/SwiftAmbiente-*/Build/Products/Release -name $(BINARY) -type f 2>/dev/null | head -1 | xargs dirname); \
 	if [ -n "$$PRODUCT_DIR" ]; then \
 		cp "$$PRODUCT_DIR/$(BINARY)" $(BIN_DIR)/; \
-		echo "Installed $(BINARY) to $(BIN_DIR)/ (Release)"; \
+		if [ -d "$$PRODUCT_DIR/mlx-swift_Cmlx.bundle" ]; then \
+			rm -rf $(BIN_DIR)/mlx-swift_Cmlx.bundle; \
+			cp -R "$$PRODUCT_DIR/mlx-swift_Cmlx.bundle" $(BIN_DIR)/; \
+			echo "Installed $(BINARY) + Metal bundle to $(BIN_DIR)/ (Release)"; \
+		else \
+			echo "Warning: Metal bundle not found, neural backend will not work"; \
+			echo "Installed $(BINARY) to $(BIN_DIR)/ (Release, no Metal bundle)"; \
+		fi; \
 	else \
 		echo "Error: Could not find $(BINARY) in DerivedData"; \
 		exit 1; \
@@ -41,7 +48,14 @@ install: resolve
 	@PRODUCT_DIR=$$(find $(DERIVED_DATA)/SwiftAmbiente-*/Build/Products/Debug -name $(BINARY) -type f 2>/dev/null | head -1 | xargs dirname); \
 	if [ -n "$$PRODUCT_DIR" ]; then \
 		cp "$$PRODUCT_DIR/$(BINARY)" $(BIN_DIR)/; \
-		echo "Installed $(BINARY) to $(BIN_DIR)/ (Debug)"; \
+		if [ -d "$$PRODUCT_DIR/mlx-swift_Cmlx.bundle" ]; then \
+			rm -rf $(BIN_DIR)/mlx-swift_Cmlx.bundle; \
+			cp -R "$$PRODUCT_DIR/mlx-swift_Cmlx.bundle" $(BIN_DIR)/; \
+			echo "Installed $(BINARY) + Metal bundle to $(BIN_DIR)/ (Debug)"; \
+		else \
+			echo "Warning: Metal bundle not found, neural backend will not work"; \
+			echo "Installed $(BINARY) to $(BIN_DIR)/ (Debug, no Metal bundle)"; \
+		fi; \
 	else \
 		echo "Error: Could not find $(BINARY) in DerivedData"; \
 		exit 1; \
@@ -69,7 +83,7 @@ clean:
 	rm -rf $(DERIVED_DATA)/SwiftAmbiente-*
 
 help:
-	@echo "SwiftAmbiente / ambienta CLI Makefile"
+	@echo "SwiftAmbiente / ambiente CLI Makefile"
 	@echo ""
 	@echo "Usage: make [target]"
 	@echo ""

@@ -2,7 +2,7 @@
 //  ProceduralAmbienteGenerator.swift
 //  SwiftAmbiente
 //
-//  Interim, dependency-free generation backend. Produces a usable atmospheric
+//  Fallback, dependency-free generation backend. Produces a usable atmospheric
 //  bed from filtered noise so the library is functional before the MLX Stable
 //  Audio backend lands. This is NOT a neural model — it is a deterministic DSP
 //  fallback that honours the duration / seed contract of ``AmbienteGenerator``.
@@ -20,7 +20,7 @@ import Foundation
 /// both conform to ``AmbienteGenerator``.
 public struct ProceduralAmbienteGenerator: AmbienteGenerator {
   public let generatorId = "procedural"
-  public let displayName = "Procedural (filtered noise — interim)"
+  public let displayName = "Procedural (filtered noise)"
 
   /// Output contract (sample rate / channels) this generator honours.
   public let config: AmbienteConfig

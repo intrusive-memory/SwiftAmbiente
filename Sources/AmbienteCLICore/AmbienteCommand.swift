@@ -1,8 +1,8 @@
 //
-//  AmbientaCommand.swift
-//  AmbientaCLICore
+//  AmbienteCommand.swift
+//  AmbienteCLICore
 //
-//  `ambienta` — generate an atmospheric / foley background bed from a text
+//  `ambiente` — generate an atmospheric / foley background bed from a text
 //  prompt or a built-in scene preset.
 //
 
@@ -11,18 +11,19 @@ import Foundation
 import SwiftAmbiente
 
 @available(macOS 10.15, macCatalyst 13, iOS 13, tvOS 13, watchOS 6, *)
-public struct AmbientaCommand: AsyncParsableCommand {
+public struct AmbienteCommand: AsyncParsableCommand {
   public init() {}
 
   public static let configuration = CommandConfiguration(
-    commandName: "ambienta",
+    commandName: "ambiente",
     abstract: "Generate atmospheric / foley background beds for your scene.",
     discussion: """
       Renders a background audio bed from a free-form prompt or a built-in scene
-      preset. The shipping engine is a procedural (filtered-noise) generator; the
-      neural Stable Audio backend is staged (see REQUIREMENTS-stable-audio-integration.md).
+      preset. Uses the Stable Audio 3 Small SFX neural backend when its model is
+      installed, otherwise a procedural (filtered-noise) generator. Override the
+      model CDN with ACERVO_CDN_BASE_URL.
       """,
-    version: "ambienta \(AmbientaVersion.current)"
+    version: "ambiente \(AmbienteCLIVersion.current)"
   )
 
   // MARK: - Scene / Prompt
@@ -42,6 +43,16 @@ public struct AmbientaCommand: AsyncParsableCommand {
 
   @Option(name: .long, help: "Deterministic seed for reproducible output.")
   public var seed: UInt64?
+
+  @Option(
+    name: .long,
+    help:
+      "Classifier-free guidance scale (neural backend). The Small SFX model is tuned for 1.0; higher values over-drive it into loud, garbled audio."
+  )
+  public var cfg: Double = 1.0
+
+  @Option(name: .long, help: "Diffusion sampler steps (neural backend).")
+  public var steps: Int = 8
 
   @Option(
     name: .long,
@@ -71,16 +82,24 @@ public struct AmbientaCommand: AsyncParsableCommand {
     if duration <= 0 {
       throw ValidationError("--duration must be greater than 0.")
     }
+    if cfg <= 0 {
+      throw ValidationError("--cfg must be greater than 0.")
+    }
+    if steps < 1 {
+      throw ValidationError("--steps must be at least 1.")
+    }
 
     let repo = try resolveModel()
     let prompt = try resolvePrompt()
 
+    Self.applyDefaultCDNBaseURL()
     let engine = AmbienteEngine()
-    let wavData = try await engine.render(
+    let generator = await engine.resolveGenerator(model: repo)
+    FileHandle.standardError.write(Data("generator: \(generator.generatorId)\n".utf8))
+    let wavData = try await generator.generate(
       prompt: prompt,
-      duration: duration,
-      seed: seed,
-      model: repo
+      settings: GenerationSettings(
+        durationSeconds: duration, steps: steps, cfgScale: cfg, seed: seed)
     )
 
     let outputPath = output ?? "./ambiente.wav"
@@ -91,6 +110,17 @@ public struct AmbientaCommand: AsyncParsableCommand {
     FileHandle.standardError.write(
       Data(
         "Wrote \(String(format: "%.1f", duration))s bed (\(bytes) bytes) to \(outputPath)\n".utf8))
+  }
+
+  // MARK: - CDN Configuration
+
+  /// Default model CDN for the CLI. SwiftAcervo has no built-in default (it
+  /// `fatalError`s when unset), so the consuming executable supplies one. An
+  /// explicitly set `ACERVO_CDN_BASE_URL` always wins (`overwrite = 0`).
+  static let defaultCDNBaseURL = "https://cdn.intrusive-memory.productions/models"
+
+  static func applyDefaultCDNBaseURL() {
+    setenv("ACERVO_CDN_BASE_URL", defaultCDNBaseURL, 0)
   }
 
   // MARK: - Resolution Helpers
