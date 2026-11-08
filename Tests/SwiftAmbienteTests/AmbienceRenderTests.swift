@@ -183,7 +183,8 @@ struct AmbienceRenderTests {
     let record = try await generator.render(ambience: ambience, to: output)
 
     #expect(record.digest == ambience.renderDigest)
-    let onDisk = try RenderRecord(jsonData: try Data(contentsOf: AmbienceRendering.recordURL(for: output)))
+    let onDisk = try RenderRecord(
+      jsonData: try Data(contentsOf: AmbienceRendering.recordURL(for: output)))
     #expect(onDisk.digest == ambience.renderDigest)
   }
 

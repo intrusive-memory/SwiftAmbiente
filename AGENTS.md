@@ -153,6 +153,17 @@ neural backend runs. Authoritative summary: README "Licensing" and `NOTICE`.
 
 ## Recent Changes
 
+### 0.2.0
+- GLOSA `ambience` notes: `AmbienteGenerator.render(ambience:to:)` renders a take and
+  writes a `<take>.wav.json` render record (digest, generator, version) after the WAV.
+- `AmbiencePlanner`: output resolution, render state (`current` / `changed` /
+  `notRendered` / `unknown`) and `seed` / `output` write-back into the screenplay.
+- `AmbientBed.fill`: loops one take to a span with equal-power crossfades and fades.
+- `PCMAudio` WAV type; takes longer than 120 s are rejected (`takeTooLong`).
+- `ambiente render <screenplay>` (`--dry-run`, `--force`, `--project-md`); the prompt form
+  is now the default `generate` subcommand.
+- Depends on glosa-av 0.11.0 (GlosaCore).
+
 ### 0.1.0 (pre-release)
 - Initial scaffold: backend abstraction, procedural generator, `ambiente` CLI,
   scene presets.

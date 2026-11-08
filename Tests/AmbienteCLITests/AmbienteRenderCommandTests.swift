@@ -170,7 +170,8 @@ struct AmbienteRenderCommandTests {
 
     let table = emitted.joined(separator: "\n")
     let lines = table.components(separatedBy: "\n")
-    #expect(lines.contains { $0.hasPrefix("NOTE") && $0.contains("STATE") && $0.contains("OUTPUT") })
+    #expect(
+      lines.contains { $0.hasPrefix("NOTE") && $0.contains("STATE") && $0.contains("OUTPUT") })
 
     let newNote = try #require(lines.first { $0.contains("busy bar") })
     #expect(newNote.contains("notRendered"))
@@ -223,7 +224,8 @@ struct AmbienteRenderCommandTests {
     let warnings = AmbienteRenderCommand.warnings(for: plan)
     #expect(warnings.contains { $0.contains("hand-placed.wav") && $0.contains("left as is") })
     let forcedWarnings = AmbienteRenderCommand.warnings(for: plan, force: true)
-    #expect(forcedWarnings.contains { $0.contains("hand-placed.wav") && $0.contains("overwriting") })
+    #expect(
+      forcedWarnings.contains { $0.contains("hand-placed.wav") && $0.contains("overwriting") })
   }
 
   @Test("The state table marks rendered and failed outcomes")

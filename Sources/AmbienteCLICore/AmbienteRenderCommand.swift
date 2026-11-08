@@ -40,12 +40,14 @@ public struct AmbienteRenderCommand: AsyncParsableCommand {
   @Flag(name: .long, help: "Print the plan's state table; write and generate nothing.")
   public var dryRun: Bool = false
 
-  @Flag(name: .long, help: "Regenerate every take, including current and hand-placed (`unknown`) ones.")
+  @Flag(
+    name: .long, help: "Regenerate every take, including current and hand-placed (`unknown`) ones.")
   public var force: Bool = false
 
   @Option(
     name: .customLong("project-md"),
-    help: "PROJECT.md that relative outputs resolve against. Default: <screenplay dir>/PROJECT.md if present."
+    help:
+      "PROJECT.md that relative outputs resolve against. Default: <screenplay dir>/PROJECT.md if present."
   )
   public var projectMd: String?
 

@@ -47,7 +47,8 @@ public enum AmbientBed {
 
     guard sampleRate > 0, channels > 0 else {
       warnings.append(
-        "take has an invalid format (sample rate \(sampleRate), \(channels) channels); bed is empty")
+        "take has an invalid format (sample rate \(sampleRate), \(channels) channels); bed is empty"
+      )
       return (PCMAudio(samples: [], sampleRate: sampleRate, channels: channels), warnings)
     }
 
