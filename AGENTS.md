@@ -62,6 +62,17 @@ effective schema object. `AmbienceRendering.renderState(for:output:)` returns `c
 `changed` / `notRendered` / `unknown`; an unparsable record is `changed`
 (`renderStatus(for:output:)` carries the warning).
 
+`AmbiencePlanner.plan(screenplay:projectMarkdown:writeBack:dryRun:)` is the shared planner
+(`ambiente render` and Produciesta export): finds standalone notes with `GlosaFountainNotes`,
+parses them with `GlosaParser`, resolves `output` (absolute as is; relative → the PROJECT.md
+directory — explicit URL or `<screenplay dir>/PROJECT.md`, if it exists — else the screenplay
+directory), and returns per-note entries with render status. Write-back gives non-`stop` notes
+with a prompt a random `UInt32` `seed` and `ambience/<stem>/amb-<8 hex>.wav` `output`, inserting
+the key lines right after the note's opening `{"ambience": {` line (pure-addition diff; canonical
+`serialize()` would edit the previous last line's comma), then replaces the file atomically. A
+note that allows no such insertion (single-line) is replaced by `serialize()`. `dryRun` assigns in
+the plan only; `writeBack: false` assigns nothing. Randomness is injectable (`using:`).
+
 ### The backend contract
 
 `AmbienteGenerator.generate(prompt:settings:)` returns interleaved WAV matching
