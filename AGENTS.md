@@ -46,7 +46,9 @@ Supporting types: `AmbienteConfig` (sample rate / channels / format),
 `GenerationSettings` (duration / steps / cfg / seed), `AmbienteSceneDescriptor`
 (preset scenes → prompts), `StableAudioModelRepo` (target models), `WAVWriter`
 (16-bit PCM encoder), `PCMAudio` (interleaved Float PCM + 16-bit WAV reader,
-`init(wavData:)` / `wavData()`), `AmbienteError`.
+`init(wavData:)` / `wavData()`), `AmbientBed` (`fill(take:duration:crossfade:fadeIn:fadeOut:)`
+loops one take to a span with equal-power seam crossfades + linear fades; vDSP, no MLX),
+`AmbienteError`.
 
 ### The backend contract
 
