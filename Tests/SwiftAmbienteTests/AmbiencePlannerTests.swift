@@ -77,18 +77,25 @@ private func write(_ text: String, to url: URL) throws {
   try Data(text.utf8).write(to: url)
 }
 
-/// `diff -u old new` output (empty when identical).
-private func unifiedDiff(_ old: URL, _ new: URL) throws -> String {
-  let process = Process()
-  process.executableURL = URL(fileURLWithPath: "/usr/bin/diff")
-  process.arguments = ["-u", old.path, new.path]
-  let pipe = Pipe()
-  process.standardOutput = pipe
-  try process.run()
-  let data = pipe.fileHandleForReading.readDataToEndOfFile()
-  process.waitUntilExit()
-  #expect(process.terminationStatus <= 1, "diff failed")
-  return String(decoding: data, as: UTF8.self)
+/// The line-level difference between two files, computed in process
+/// (`CollectionDifference`, a minimal edit script like a unified diff's): the
+/// lines a unified diff would show as `-` (removed) and `+` (inserted).
+private func lineDifference(
+  _ old: URL, _ new: URL
+) throws -> (removed: [Substring], inserted: [Substring]) {
+  let oldText = try String(contentsOf: old, encoding: .utf8)
+  let newText = try String(contentsOf: new, encoding: .utf8)
+  let oldLines = oldText.split(separator: "\n", omittingEmptySubsequences: false)
+  let newLines = newText.split(separator: "\n", omittingEmptySubsequences: false)
+  var removed: [Substring] = []
+  var inserted: [Substring] = []
+  for change in newLines.difference(from: oldLines) {
+    switch change {
+    case .remove(_, let line, _): removed.append(line)
+    case .insert(_, let line, _): inserted.append(line)
+    }
+  }
+  return (removed, inserted)
 }
 
 /// Whether `line` (a `+` line's text) is a written-back `seed` / `output` key.
@@ -209,18 +216,12 @@ struct AmbiencePlannerTests {
     #expect(plan.wroteBack)
     #expect(plan.entries.count == 4)
 
-    // The unified diff contains only `+` lines, each a seed/output key.
-    let diff = try unifiedDiff(original, screenplay)
-    let body = diff.split(separator: "\n", omittingEmptySubsequences: false).filter {
-      !$0.hasPrefix("---") && !$0.hasPrefix("+++") && !$0.hasPrefix("@@")
-        && !$0.hasPrefix("\\")
-    }
-    let removed = body.filter { $0.hasPrefix("-") }
-    let added = body.filter { $0.hasPrefix("+") }
+    // The line diff contains only insertions (`+` lines), each a seed/output key.
+    let (removed, added) = try lineDifference(original, screenplay)
     #expect(removed.isEmpty, "write-back removed or changed lines: \(removed)")
-    #expect(added.count == 4, "expected seed+output for two notes:\n\(diff)")
+    #expect(added.count == 4, "expected seed+output for two notes: \(added)")
     for line in added {
-      #expect(isSeedOrOutputKeyLine(line.dropFirst()), "unexpected added line: \(line)")
+      #expect(isSeedOrOutputKeyLine(line), "unexpected added line: \(line)")
     }
 
     // Assigned values: seed + `ambience/<stem>/amb-<8 hex>.wav`; stop and
