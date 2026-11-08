@@ -29,6 +29,11 @@ let package = Package(
     .package(
       url: "https://github.com/intrusive-memory/SwiftAcervo.git", .upToNextMajor(from: "0.25.0")),
 
+    // GLOSA notation: the `ambience` directive (`GlosaCore.Ambience`) that
+    // `AmbienteGenerator.render(ambience:to:)` renders. GlosaCore only.
+    .package(
+      url: "https://github.com/intrusive-memory/glosa-av.git", .upToNextMajor(from: "0.11.0")),
+
     // MLX Swift — the Stable Audio backend (WU2) translates Stability AI's
     // official Python-MLX reference op-for-op into MLX Swift (see
     // Sources/SwiftAmbiente/StableAudio/STRATEGY.md). It maps 1:1 to Python MLX
@@ -47,6 +52,7 @@ let package = Package(
       name: "SwiftAmbiente",
       dependencies: [
         .product(name: "SwiftAcervo", package: "SwiftAcervo"),
+        .product(name: "GlosaCore", package: "glosa-av"),
         // MLX Swift primitives for the Stable Audio backend (WU2): arrays/ops,
         // NN layers, deterministic RNG (seed parity), and FFT.
         .product(name: "MLX", package: "mlx-swift"),
@@ -81,7 +87,10 @@ let package = Package(
     ),
     .testTarget(
       name: "SwiftAmbienteTests",
-      dependencies: ["SwiftAmbiente"],
+      dependencies: [
+        "SwiftAmbiente",
+        .product(name: "GlosaCore", package: "glosa-av"),
+      ],
       swiftSettings: [
         .enableUpcomingFeature("StrictConcurrency")
       ]

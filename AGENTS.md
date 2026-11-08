@@ -50,6 +50,18 @@ Supporting types: `AmbienteConfig` (sample rate / channels / format),
 loops one take to a span with equal-power seam crossfades + linear fades; vDSP, no MLX),
 `AmbienteError`.
 
+### Rendering GLOSA `ambience` notes
+
+SwiftAmbiente depends on glosa-av (`GlosaCore` only). `AmbienteGenerator.render(ambience:to:)`
+maps a `GlosaCore.Ambience` note (`take`/`seed`/`steps`/`cfg` → `GenerationSettings`), validates
+its `model` id through `AmbienceModel.resolve` (`stable-audio-3-small-sfx` → Stable Audio SFX;
+unknown ids throw `AmbienteError.unknownAmbienceModel`), writes the take WAV via temp file +
+`rename(2)`, and only then writes the `RenderRecord` to `<output>.json` (e.g. `amb.wav.json`) the
+same way. The record's `digest` is the note's `renderDigest` as written; its `ambience` is the
+effective schema object. `AmbienceRendering.renderState(for:output:)` returns `current` /
+`changed` / `notRendered` / `unknown`; an unparsable record is `changed`
+(`renderStatus(for:output:)` carries the warning).
+
 ### The backend contract
 
 `AmbienteGenerator.generate(prompt:settings:)` returns interleaved WAV matching
