@@ -70,8 +70,8 @@ screenplay directory), generates every `changed` / `notRendered` take (every tak
 with `--force`) with the backend the note's `model` names, writes the
 `<take>.wav.json` render record beside each take, and prints a state table (note,
 line, state, action, prompt, output). A take in state `unknown` — a WAV with no
-render record, i.e. hand-placed — is never overwritten; it is reported with a
-warning. `render` downloads the note's model on first use and has no procedural
+render record, i.e. hand-placed — is kept and reported with a warning unless
+`--force` is given, which overwrites it too. `render` downloads the note's model on first use and has no procedural
 fallback.
 
 ## Architecture

@@ -28,8 +28,7 @@ public struct AmbienteRenderCommand: AsyncParsableCommand {
       with no procedural fallback — and prints a state table.
 
       A take in state `unknown` (a WAV with no render record — a hand-placed
-      file) is never overwritten, even with --force; it is reported with a
-      warning.
+      file) is kept and reported with a warning. --force overwrites it too.
 
       --dry-run reports the plan and changes nothing: no write-back, no takes.
       """
@@ -41,7 +40,7 @@ public struct AmbienteRenderCommand: AsyncParsableCommand {
   @Flag(name: .long, help: "Print the plan's state table; write and generate nothing.")
   public var dryRun: Bool = false
 
-  @Flag(name: .long, help: "Regenerate every take, including current ones (never `unknown`).")
+  @Flag(name: .long, help: "Regenerate every take, including current and hand-placed (`unknown`) ones.")
   public var force: Bool = false
 
   @Option(
@@ -80,7 +79,7 @@ public struct AmbienteRenderCommand: AsyncParsableCommand {
     let plan = try AmbiencePlanner.plan(
       screenplay: screenplayURL, projectMarkdown: projectURL, writeBack: true, dryRun: dryRun)
 
-    for warning in Self.warnings(for: plan) {
+    for warning in Self.warnings(for: plan, force: force) {
       Self.warn(warning)
     }
 
@@ -142,21 +141,21 @@ public struct AmbienteRenderCommand: AsyncParsableCommand {
   }
 
   /// The entries to generate: renderable `changed` / `notRendered` takes, or
-  /// with `force` also `current` ones. `unknown` takes are never selected.
+  /// with `force` every renderable take, including `current` and `unknown`
+  /// (hand-placed) ones.
   public static func entriesToRender(in plan: AmbiencePlan, force: Bool) -> [AmbiencePlanEntry] {
     plan.entries.filter { entry in
       guard isRenderable(entry), let state = entry.state else { return false }
       switch state {
       case .changed, .notRendered: return true
-      case .current: return force
-      case .unknown: return false
+      case .current, .unknown: return force
       }
     }
   }
 
   /// Planner warnings, note diagnostics, unreadable-record warnings, and one
-  /// warning per `unknown` take, ready to print.
-  public static func warnings(for plan: AmbiencePlan) -> [String] {
+  /// warning per `unknown` take (kept, or overwritten when `force`), ready to print.
+  public static func warnings(for plan: AmbiencePlan, force: Bool = false) -> [String] {
     var result = plan.warnings
     for diagnostic in plan.diagnostics {
       let line = diagnostic.line.map { "line \($0): " } ?? ""
@@ -168,7 +167,9 @@ public struct AmbienteRenderCommand: AsyncParsableCommand {
       }
       if entry.state == .unknown, let output = entry.output {
         result.append(
-          "note \(entry.noteIndex) (line \(entry.line)): \(output.path) has no render record (hand-placed?); left as is."
+          force
+            ? "note \(entry.noteIndex) (line \(entry.line)): \(output.path) has no render record (hand-placed?); overwriting it (--force)."
+            : "note \(entry.noteIndex) (line \(entry.line)): \(output.path) has no render record (hand-placed?); left as is."
         )
       }
     }

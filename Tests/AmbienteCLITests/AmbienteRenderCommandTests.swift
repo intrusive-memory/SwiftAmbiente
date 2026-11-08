@@ -191,7 +191,7 @@ struct AmbienteRenderCommandTests {
     #expect(lines.contains { $0.contains("stop") })
   }
 
-  @Test("--force adds current takes; unknown takes are never selected")
+  @Test("--force adds current and unknown (hand-placed) takes")
   func forceSelection() throws {
     let (directory, screenplay) = try makeProject()
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -216,12 +216,14 @@ struct AmbienteRenderCommandTests {
 
     let forced = AmbienteRenderCommand.entriesToRender(in: plan, force: true)
       .compactMap(\.ambience.prompt)
-    #expect(forced.count == 2)
+    #expect(forced.count == 3)
     #expect(forced.contains("traffic"))
-    #expect(!forced.contains("rain on the window"))
+    #expect(forced.contains("rain on the window"))
 
     let warnings = AmbienteRenderCommand.warnings(for: plan)
-    #expect(warnings.contains { $0.contains("hand-placed.wav") })
+    #expect(warnings.contains { $0.contains("hand-placed.wav") && $0.contains("left as is") })
+    let forcedWarnings = AmbienteRenderCommand.warnings(for: plan, force: true)
+    #expect(forcedWarnings.contains { $0.contains("hand-placed.wav") && $0.contains("overwriting") })
   }
 
   @Test("The state table marks rendered and failed outcomes")

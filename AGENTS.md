@@ -110,7 +110,7 @@ ambiente generate "render farm hum"          # explicit default subcommand
 
 ambiente render ep1.fountain --dry-run       # state table; no write-back, no takes
 ambiente render ep1.fountain                 # write back seed/output; render changed + notRendered
-ambiente render ep1.fountain --force --project-md ../PROJECT.md   # also re-render current takes
+ambiente render ep1.fountain --force --project-md ../PROJECT.md   # also re-render current and hand-placed takes
 ```
 
 Structure: `AmbienteRootCommand` (`commandName: "ambiente"`) has subcommands
@@ -119,8 +119,8 @@ command, flags unchanged) and `render` (`AmbienteRenderCommand`). Both set the
 `ACERVO_CDN_BASE_URL` default before touching a model. `ambiente render` calls
 `AmbiencePlanner.plan(screenplay:projectMarkdown:writeBack: true, dryRun:)`, selects
 takes with `AmbienteRenderCommand.entriesToRender(in:force:)` (`changed` /
-`notRendered`; `--force` adds `current`; `unknown` is never selected — warned and
-kept), loads each note's `AmbienceModel` backend through
+`notRendered`; `--force` adds `current` and `unknown` — without it an `unknown`
+take is warned about and kept), loads each note's `AmbienceModel` backend through
 `AmbienteModelManager.loadGenerator` (download on first use, **no procedural
 fallback** — a fallback take would carry a matching digest and read as `current`),
 calls `render(ambience:to:)`, and prints `AmbienteRenderCommand.stateTable(for:outcomes:)`
