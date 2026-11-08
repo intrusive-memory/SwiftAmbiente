@@ -55,7 +55,24 @@ ambiente --list-scenes             # show built-in presets
 ambiente --scene rain -d 30 -o rain.wav
 ambiente "quiet café murmur, distant traffic" -d 15 -o cafe.wav
 ambiente --scene forest --seed 42  # reproducible; writes ./ambiente.wav
+ambiente generate "render farm hum" # explicit form of the default subcommand
+
+ambiente render ep1.fountain --dry-run   # state table only; writes nothing
+ambiente render ep1.fountain             # write back seed/output, render changed + new takes
+ambiente render ep1.fountain --force --project-md ../PROJECT.md
 ```
+
+`ambiente "<prompt>"` runs the default `generate` subcommand, so every flag above
+works without naming it. `ambiente render <screenplay>` renders the screenplay's
+GLOSA `{"ambience": {...}}` notes: it writes a missing `seed` / `output` back into
+each note, resolves `output` (relative → the PROJECT.md directory, else the
+screenplay directory), generates every `changed` / `notRendered` take (every take
+with `--force`) with the backend the note's `model` names, writes the
+`<take>.wav.json` render record beside each take, and prints a state table (note,
+line, state, action, prompt, output). A take in state `unknown` — a WAV with no
+render record, i.e. hand-placed — is never overwritten; it is reported with a
+warning. `render` downloads the note's model on first use and has no procedural
+fallback.
 
 ## Architecture
 
