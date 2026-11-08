@@ -45,7 +45,33 @@ AmbienteEngine            ← front door: picks a backend, renders a bed
 Supporting types: `AmbienteConfig` (sample rate / channels / format),
 `GenerationSettings` (duration / steps / cfg / seed), `AmbienteSceneDescriptor`
 (preset scenes → prompts), `StableAudioModelRepo` (target models), `WAVWriter`
-(16-bit PCM encoder), `AmbienteError`.
+(16-bit PCM encoder), `PCMAudio` (interleaved Float PCM + 16-bit WAV reader,
+`init(wavData:)` / `wavData()`), `AmbientBed` (`fill(take:duration:crossfade:fadeIn:fadeOut:)`
+loops one take to a span with equal-power seam crossfades + linear fades; vDSP, no MLX),
+`AmbienteError`.
+
+### Rendering GLOSA `ambience` notes
+
+SwiftAmbiente depends on glosa-av (`GlosaCore` only). `AmbienteGenerator.render(ambience:to:)`
+maps a `GlosaCore.Ambience` note (`take`/`seed`/`steps`/`cfg` → `GenerationSettings`), validates
+its `model` id through `AmbienceModel.resolve` (`stable-audio-3-small-sfx` → Stable Audio SFX;
+unknown ids throw `AmbienteError.unknownAmbienceModel`), writes the take WAV via temp file +
+`rename(2)`, and only then writes the `RenderRecord` to `<output>.json` (e.g. `amb.wav.json`) the
+same way. The record's `digest` is the note's `renderDigest` as written; its `ambience` is the
+effective schema object. `AmbienceRendering.renderState(for:output:)` returns `current` /
+`changed` / `notRendered` / `unknown`; an unparsable record is `changed`
+(`renderStatus(for:output:)` carries the warning).
+
+`AmbiencePlanner.plan(screenplay:projectMarkdown:writeBack:dryRun:)` is the shared planner
+(`ambiente render` and Produciesta export): finds standalone notes with `GlosaFountainNotes`,
+parses them with `GlosaParser`, resolves `output` (absolute as is; relative → the PROJECT.md
+directory — explicit URL or `<screenplay dir>/PROJECT.md`, if it exists — else the screenplay
+directory), and returns per-note entries with render status. Write-back gives non-`stop` notes
+with a prompt a random `UInt32` `seed` and `ambience/<stem>/amb-<8 hex>.wav` `output`, inserting
+the key lines right after the note's opening `{"ambience": {` line (pure-addition diff; canonical
+`serialize()` would edit the previous last line's comma), then replaces the file atomically. A
+note that allows no such insertion (single-line) is replaced by `serialize()`. `dryRun` assigns in
+the plan only; `writeBack: false` assigns nothing. Randomness is injectable (`using:`).
 
 ### The backend contract
 
@@ -53,6 +79,12 @@ Supporting types: `AmbienteConfig` (sample rate / channels / format),
 the generator's `AmbienteConfig`. Both the procedural and (future) ML engines
 honour `durationSeconds` and `seed` so output is reproducible across backends;
 `steps` / `cfgScale` are ML-only.
+
+`StableAudioGenerator` renders at most one model window per take:
+`StableAudioModelConfig.maxDurationSeconds` (`sample_size / sample_rate`, ≈ 120 s)
+once loaded, `StableAudioGenerator.defaultMaxDurationSeconds` (120) before. Longer
+requests throw `AmbienteError.takeTooLong(seconds:limit:)` before any model load;
+long beds are built by looping a take.
 
 ### Backend selection
 
@@ -74,7 +106,27 @@ ambiente --scene rain -d 30 -o rain.wav
 ambiente "distant city traffic, muffled hum" -d 15 -o city.wav
 ambiente --scene forest --seed 42            # reproducible → ./ambiente.wav
 ambiente --model sfx --scene ocean -d 60 -o ocean.wav
+ambiente generate "render farm hum"          # explicit default subcommand
+
+ambiente render ep1.fountain --dry-run       # state table; no write-back, no takes
+ambiente render ep1.fountain                 # write back seed/output; render changed + notRendered
+ambiente render ep1.fountain --force --project-md ../PROJECT.md   # also re-render current and hand-placed takes
 ```
+
+Structure: `AmbienteRootCommand` (`commandName: "ambiente"`) has subcommands
+`generate` (`AmbienteCommand`, the `defaultSubcommand` — the pre-subcommand flat
+command, flags unchanged) and `render` (`AmbienteRenderCommand`). Both set the
+`ACERVO_CDN_BASE_URL` default before touching a model. `ambiente render` calls
+`AmbiencePlanner.plan(screenplay:projectMarkdown:writeBack: true, dryRun:)`, selects
+takes with `AmbienteRenderCommand.entriesToRender(in:force:)` (`changed` /
+`notRendered`; `--force` adds `current` and `unknown` — without it an `unknown`
+take is warned about and kept), loads each note's `AmbienceModel` backend through
+`AmbienteModelManager.loadGenerator` (download on first use, **no procedural
+fallback** — a fallback take would carry a matching digest and read as `current`),
+calls `render(ambience:to:)`, and prints `AmbienteRenderCommand.stateTable(for:outcomes:)`
+(pure; tested without a model). A failed take does not stop the others; the
+command exits non-zero if any failed. A prompt whose first word is a subcommand
+name needs the explicit `ambiente generate …` form.
 
 Scene presets: `room-tone`, `rain`, `forest`, `city`, `ocean`, `cafe`, `night`.
 
@@ -101,6 +153,17 @@ neural backend runs. Authoritative summary: README "Licensing" and `NOTICE`.
 
 ## Recent Changes
 
+### 0.2.0
+- GLOSA `ambience` notes: `AmbienteGenerator.render(ambience:to:)` renders a take and
+  writes a `<take>.wav.json` render record (digest, generator, version) after the WAV.
+- `AmbiencePlanner`: output resolution, render state (`current` / `changed` /
+  `notRendered` / `unknown`) and `seed` / `output` write-back into the screenplay.
+- `AmbientBed.fill`: loops one take to a span with equal-power crossfades and fades.
+- `PCMAudio` WAV type; takes longer than 120 s are rejected (`takeTooLong`).
+- `ambiente render <screenplay>` (`--dry-run`, `--force`, `--project-md`); the prompt form
+  is now the default `generate` subcommand.
+- Depends on glosa-av 0.11.0 (GlosaCore).
+
 ### 0.1.0 (pre-release)
 - Initial scaffold: backend abstraction, procedural generator, `ambiente` CLI,
   scene presets.
@@ -111,7 +174,7 @@ neural backend runs. Authoritative summary: README "Licensing" and `NOTICE`.
 ## Queryable Codemap
 
 A prebuilt [graphify](https://pypi.org/project/graphifyy/) knowledge graph of this
-codebase lives in [`graphify-out/`](graphify-out/) (602 nodes · 1028 edges). **Prefer
+codebase lives in [`graphify-out/`](graphify-out/) (900 nodes · 1656 edges). **Prefer
 querying it before grepping** for architecture or "what connects to what" questions:
 
 ```bash

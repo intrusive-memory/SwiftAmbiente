@@ -24,6 +24,17 @@ public enum AmbienteError: Error, LocalizedError, Sendable {
   /// The requested preset scene name is not recognized.
   case unsupportedScene(String)
 
+  /// The requested take is longer than the backend renders in one pass.
+  /// Longer spans are built by looping a take, not by asking for a longer one.
+  case takeTooLong(seconds: Double, limit: Double)
+
+  /// An `ambience` note names a `model` id SwiftAmbiente has no backend for.
+  case unknownAmbienceModel(String)
+
+  /// An `ambience` note cannot be rendered (a `stop` note, a missing prompt,
+  /// or an output location that is not a file URL).
+  case invalidAmbience(String)
+
   public var errorDescription: String? {
     switch self {
     case .modelNotAvailable(let model):
@@ -37,6 +48,13 @@ public enum AmbienteError: Error, LocalizedError, Sendable {
     case .unsupportedScene(let name):
       return
         "Unsupported scene '\(name)'. Use `ambiente --list-scenes` to see the built-in presets, or pass a free-form text prompt."
+    case .takeTooLong(let seconds, let limit):
+      return "Requested take of \(seconds)s exceeds the \(limit)s single-take limit."
+    case .unknownAmbienceModel(let id):
+      let known = AmbienceModel.allCases.map(\.rawValue).joined(separator: ", ")
+      return "Unknown ambience model '\(id)'. Known models: \(known)."
+    case .invalidAmbience(let detail):
+      return "Cannot render ambience: \(detail)"
     }
   }
 }

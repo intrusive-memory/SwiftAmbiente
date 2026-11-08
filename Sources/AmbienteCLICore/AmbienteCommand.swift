@@ -2,8 +2,9 @@
 //  AmbienteCommand.swift
 //  AmbienteCLICore
 //
-//  `ambiente` — generate an atmospheric / foley background bed from a text
-//  prompt or a built-in scene preset.
+//  `ambiente generate` (the default subcommand of `ambiente`) — generate an
+//  atmospheric / foley background bed from a text prompt or a built-in scene
+//  preset.
 //
 
 import ArgumentParser
@@ -15,13 +16,17 @@ public struct AmbienteCommand: AsyncParsableCommand {
   public init() {}
 
   public static let configuration = CommandConfiguration(
-    commandName: "ambiente",
-    abstract: "Generate atmospheric / foley background beds for your scene.",
+    commandName: "generate",
+    abstract: "Generate one bed from a prompt or scene preset (the default subcommand).",
     discussion: """
       Renders a background audio bed from a free-form prompt or a built-in scene
       preset. Uses the Stable Audio 3 Small SFX neural backend when its model is
       installed, otherwise a procedural (filtered-noise) generator. Override the
       model CDN with ACERVO_CDN_BASE_URL.
+
+      This is the default subcommand: `ambiente "<prompt>"` is the same as
+      `ambiente generate "<prompt>"`. Use the explicit form when the prompt's
+      first word is a subcommand name (e.g. `ambiente generate render farm hum`).
       """,
     version: "ambiente \(AmbienteCLIVersion.current)"
   )
