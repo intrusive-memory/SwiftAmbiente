@@ -41,6 +41,50 @@ struct StableAudioGeneratorTests {
     }
   }
 
+  @Test("defaults the single-take limit to 120 s before any model load")
+  func defaultTakeLimit() {
+    let g = StableAudioGenerator(modelDirectory: Self.bogusDir)
+    #expect(StableAudioGenerator.defaultMaxDurationSeconds == 120)
+    #expect(g.maxDurationSeconds == 120)
+  }
+
+  @Test("rejects a 121 s take with takeTooLong before touching the model")
+  func rejectsTakeOverLimit() async {
+    // bogusDir has no model: reaching the load would fail with a different
+    // error, so takeTooLong proves the check runs before any model access.
+    let g = StableAudioGenerator(modelDirectory: Self.bogusDir)
+    do {
+      _ = try await g.generate(prompt: "bar", settings: GenerationSettings(durationSeconds: 121))
+      Issue.record("expected takeTooLong for a 121 s request")
+    } catch AmbienteError.takeTooLong(let seconds, let limit) {
+      #expect(seconds == 121)
+      #expect(limit == 120)
+    } catch {
+      Issue.record("expected takeTooLong, got \(error)")
+    }
+  }
+
+  @Test("accepts a 120 s take (validation only, no model)")
+  func acceptsTakeAtLimit() throws {
+    let g = StableAudioGenerator(modelDirectory: Self.bogusDir)
+    try g.validate(settings: GenerationSettings(durationSeconds: 120))
+  }
+
+  @Test("a 120 s take passes the limit and only fails at the missing model")
+  func takeAtLimitReachesModelLoad() async {
+    // bogusDir does not exist, so the load fails fast on the missing
+    // model_config.json — nothing is downloaded or loaded.
+    let g = StableAudioGenerator(modelDirectory: Self.bogusDir)
+    do {
+      _ = try await g.generate(prompt: "bar", settings: GenerationSettings(durationSeconds: 120))
+      Issue.record("expected the missing model to fail the load")
+    } catch AmbienteError.takeTooLong {
+      Issue.record("120 s must be within the limit")
+    } catch {
+      // Expected: the model directory does not exist.
+    }
+  }
+
   @Test("rejects a non-44.1 kHz-stereo config")
   func rejectsUnsupportedConfig() async {
     let g = StableAudioGenerator(

@@ -45,7 +45,8 @@ AmbienteEngine            ← front door: picks a backend, renders a bed
 Supporting types: `AmbienteConfig` (sample rate / channels / format),
 `GenerationSettings` (duration / steps / cfg / seed), `AmbienteSceneDescriptor`
 (preset scenes → prompts), `StableAudioModelRepo` (target models), `WAVWriter`
-(16-bit PCM encoder), `AmbienteError`.
+(16-bit PCM encoder), `PCMAudio` (interleaved Float PCM + 16-bit WAV reader,
+`init(wavData:)` / `wavData()`), `AmbienteError`.
 
 ### The backend contract
 
@@ -53,6 +54,12 @@ Supporting types: `AmbienteConfig` (sample rate / channels / format),
 the generator's `AmbienteConfig`. Both the procedural and (future) ML engines
 honour `durationSeconds` and `seed` so output is reproducible across backends;
 `steps` / `cfgScale` are ML-only.
+
+`StableAudioGenerator` renders at most one model window per take:
+`StableAudioModelConfig.maxDurationSeconds` (`sample_size / sample_rate`, ≈ 120 s)
+once loaded, `StableAudioGenerator.defaultMaxDurationSeconds` (120) before. Longer
+requests throw `AmbienteError.takeTooLong(seconds:limit:)` before any model load;
+long beds are built by looping a take.
 
 ### Backend selection
 

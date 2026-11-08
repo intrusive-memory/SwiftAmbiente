@@ -71,6 +71,16 @@ public struct StableAudioModelConfig: Codable, Sendable, Equatable {
   /// The DiT hyperparameters (embed dim, depth, heads, conditioning dims).
   public var diffusion: DiffusionConfig { model.diffusion.config }
 
+  /// Longest take the model renders in one pass: `sampleSize / sampleRate`
+  /// (≈ 120 s for the SFX variant). Falls back to
+  /// ``StableAudioGenerator/defaultMaxDurationSeconds`` if either is non-positive.
+  public var maxDurationSeconds: Double {
+    guard sampleSize > 0, sampleRate > 0 else {
+      return StableAudioGenerator.defaultMaxDurationSeconds
+    }
+    return Double(sampleSize) / Double(sampleRate)
+  }
+
   // MARK: - Nested types
 
   /// The `model` sub-object.

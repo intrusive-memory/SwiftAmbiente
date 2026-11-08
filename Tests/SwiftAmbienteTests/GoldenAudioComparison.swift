@@ -11,6 +11,8 @@
 import Foundation
 import MLX
 
+@testable import SwiftAmbiente
+
 /// A parsed canonical 44-byte-header 16-bit PCM WAV.
 struct PCMWAV {
   let sampleRate: Int
@@ -55,17 +57,20 @@ struct PCMWAV {
     guard dataSize == bytes.count - 44 else {
       throw ParseError.sizeMismatch(declared: dataSize, actual: bytes.count - 44)
     }
-    let channels = u16(22)
-    sampleRate = u32(24)
+    // Sample decoding is the library's `PCMAudio` reader; this helper only adds
+    // the strict canonical-header checks above and de-interleaves.
+    let audio = try PCMAudio(wavData: data)
+    let channels = audio.channels
+    sampleRate = audio.sampleRate
     self.channels = channels
     bitsPerSample = bits
-    let frameCount = dataSize / (2 * channels)
+    let frameCount = audio.frameCount
     var chans = [[Float]](repeating: [Float](repeating: 0, count: frameCount), count: channels)
-    for f in 0..<frameCount {
-      for c in 0..<channels {
-        let o = 44 + 2 * (f * channels + c)
-        let v = Int16(bitPattern: UInt16(bytes[o]) | UInt16(bytes[o + 1]) << 8)
-        chans[c][f] = Float(v) / 32767.0
+    audio.samples.withUnsafeBufferPointer { interleaved in
+      for f in 0..<frameCount {
+        for c in 0..<channels {
+          chans[c][f] = interleaved[f * channels + c]
+        }
       }
     }
     channelSamples = chans
