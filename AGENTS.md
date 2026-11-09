@@ -128,6 +128,14 @@ calls `render(ambience:to:)`, and prints `AmbienteRenderCommand.stateTable(for:o
 command exits non-zero if any failed. A prompt whose first word is a subcommand
 name needs the explicit `ambiente generate …` form.
 
+`ambiente render` also renders `foley` notes: `AmbienteRenderCommand.foleyEntriesToRender(in:force:)`
+selects them like ambience takes, and `render(foley:to:)` writes the take. Ambience and foley
+jobs run in document order (`noteIndex`); `execute(loadGenerator:emit:)` takes an optional
+generator loader so tests inject a fake. The state table has a `KIND` column (`ambience` /
+`foley`), rows merged by `noteIndex`; `--dry-run` reports foley rows and renders nothing. The
+render record names its directive: `{"foley": …}` vs `{"ambience": …}`; a record for the other
+directive reads `changed`.
+
 Scene presets: `room-tone`, `rain`, `forest`, `city`, `ocean`, `cafe`, `night`.
 
 ## Conventions inherited from the ecosystem
@@ -152,6 +160,18 @@ any commercial use; terminates above US$1,000,000 aggregate annual revenue;
 neural backend runs. Authoritative summary: README "Licensing" and `NOTICE`.
 
 ## Recent Changes
+
+### 0.3.0
+- GLOSA `foley` notes (one-shot spot effects): `AmbienteGenerator.render(foley:to:)` renders a
+  take and writes its render record after the WAV.
+- `RenderRecord` names its directive (`{"ambience": …}` or `{"foley": …}`); a record for the
+  other directive reads `changed`. Ambience records from 0.2.0 decode unchanged.
+  **API change:** `RenderRecord.ambience` is now optional; `RenderRecord.foley` is new.
+- `AmbiencePlanner` returns `foleyEntries` and writes foley `seed` / `output`
+  (`foley/<stem>/fol-<8 hex>.wav`) in the same single screenplay rewrite as ambience.
+  Planner diagnostics now include foley notes.
+- `ambiente render` renders foley takes; the state table gains a `KIND` column.
+- Depends on glosa-av 0.12.0 (GlosaCore `Foley`).
 
 ### 0.2.0
 - GLOSA `ambience` notes: `AmbienteGenerator.render(ambience:to:)` renders a take and

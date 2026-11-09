@@ -371,4 +371,154 @@ struct AmbiencePlannerTests {
       + "  \"prompt\": \"hum\"\r\n}} ]]\r\n"
     #expect(try String(contentsOf: screenplay, encoding: .utf8) == expected)
   }
+
+  // MARK: Foley (REQUIREMENTS-foley §§ 3.2, 4.3, D-5)
+
+  @Test("Ambience and foley write-back share one rewrite; only key lines are added")
+  func foleyWriteBackSharesOneRewrite() throws {
+    let dir = try makeTempDirectory()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let original = dir.appendingPathComponent("original.fountain")
+    let screenplay = dir.appendingPathComponent("teacup.fountain")
+    try write(foleyScreenplayText, to: original)
+    try write(foleyScreenplayText, to: screenplay)
+
+    var rng = SeededGenerator(seed: 42)
+    var writes: [URL] = []
+    let plan = try AmbiencePlanner.plan(
+      screenplay: screenplay, using: &rng,
+      write: { data, url in
+        writes.append(url)
+        try AtomicFileWriter.write(data, to: url)
+      })
+    #expect(writes.count == 1, "expected exactly one rewrite, got \(writes)")
+    #expect(writes.first == screenplay.resolvingSymlinksInPath())
+    #expect(plan.wroteBack)
+    #expect(plan.entries.count == 1)
+    #expect(plan.foleyEntries.count == 2)
+    #expect(plan.diagnostics.isEmpty)
+
+    // The line diff contains only insertions: seed+output for the ambience
+    // note and for the first foley note.
+    let (removed, added) = try lineDifference(original, screenplay)
+    #expect(removed.isEmpty, "write-back removed or changed lines: \(removed)")
+    #expect(added.count == 4, "expected seed+output for two notes: \(added)")
+    for line in added {
+      #expect(isSeedOrOutputKeyLine(line), "unexpected added line: \(line)")
+    }
+
+    let ambience = plan.entries[0]
+    #expect(ambience.assignedSeed && ambience.assignedOutput)
+    let ambienceOutput = try #require(ambience.ambience.output)
+    #expect(ambienceOutput.wholeMatch(of: /ambience\/teacup\/amb-[0-9a-f]{8}\.wav/) != nil)
+
+    let fresh = plan.foleyEntries[0]
+    #expect(fresh.assignedSeed && fresh.assignedOutput)
+    #expect(fresh.foley.seed != nil)
+    let foleyOutput = try #require(fresh.foley.output)
+    #expect(
+      foleyOutput.wholeMatch(of: /foley\/teacup\/fol-[0-9a-f]{8}\.wav/) != nil,
+      "bad output \(foleyOutput)")
+    #expect(fresh.output == dir.appendingPathComponent(foleyOutput).standardizedFileURL)
+    #expect(fresh.state == .notRendered)
+    #expect(fresh.line == 12)
+
+    let complete = plan.foleyEntries[1]
+    #expect(!complete.assignedSeed && !complete.assignedOutput)
+    #expect(complete.foley.seed == 5)
+    #expect(
+      complete.output == dir.appendingPathComponent("sfx/door.wav").standardizedFileURL)
+    #expect(complete.state == .notRendered)
+    #expect(complete.line == 19)
+
+    // The rewritten notes parse to exactly the planned notes, and a second
+    // plan has nothing to write.
+    var writesAgain = 0
+    let reread = try AmbiencePlanner.plan(
+      screenplay: screenplay, using: &rng, write: { _, _ in writesAgain += 1 })
+    #expect(writesAgain == 0)
+    #expect(!reread.wroteBack)
+    #expect(reread.entries.map(\.ambience) == plan.entries.map(\.ambience))
+    #expect(reread.foleyEntries.map(\.foley) == plan.foleyEntries.map(\.foley))
+    #expect(reread.foleyEntries.map(\.output) == plan.foleyEntries.map(\.output))
+  }
+
+  @Test("A dry run assigns foley values in the plan but writes nothing")
+  func foleyDryRunWritesNothing() throws {
+    let dir = try makeTempDirectory()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let screenplay = dir.appendingPathComponent("teacup.fountain")
+    try write(foleyScreenplayText, to: screenplay)
+    let before = try Data(contentsOf: screenplay)
+
+    var rng = SeededGenerator(seed: 5)
+    var writes = 0
+    let plan = try AmbiencePlanner.plan(
+      screenplay: screenplay, dryRun: true, using: &rng, write: { _, _ in writes += 1 })
+    #expect(writes == 0)
+    #expect(!plan.wroteBack)
+    #expect(try Data(contentsOf: screenplay) == before)
+    #expect(plan.foleyEntries[0].assignedSeed && plan.foleyEntries[0].assignedOutput)
+    #expect(plan.foleyEntries[0].output != nil)
+    #expect(plan.foleyEntries[0].state == .notRendered)
+    let contents = try FileManager.default.contentsOfDirectory(atPath: dir.path)
+    #expect(contents == ["teacup.fountain"], "dry run left files: \(contents)")
+  }
+
+  @Test("writeBack: false leaves a foley note without output unresolved")
+  func foleyWriteBackDisabled() throws {
+    let dir = try makeTempDirectory()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let screenplay = dir.appendingPathComponent("teacup.fountain")
+    try write(foleyScreenplayText, to: screenplay)
+    let before = try Data(contentsOf: screenplay)
+    // A take with a record for the other kind: reported as changed.
+    let door = dir.appendingPathComponent("sfx/door.wav")
+    try write("not really a wav", to: door)
+
+    var writes = 0
+    var rng = SeededGenerator(seed: 6)
+    let plan = try AmbiencePlanner.plan(
+      screenplay: screenplay, writeBack: false, using: &rng, write: { _, _ in writes += 1 })
+    #expect(writes == 0)
+    #expect(!plan.wroteBack)
+    #expect(try Data(contentsOf: screenplay) == before)
+    let fresh = plan.foleyEntries[0]
+    #expect(!fresh.assignedSeed && !fresh.assignedOutput)
+    #expect(fresh.foley.seed == nil && fresh.foley.output == nil)
+    #expect(fresh.output == nil && fresh.status == nil)
+    #expect(plan.foleyEntries[1].output == door.standardizedFileURL)
+    #expect(plan.foleyEntries[1].state == .unknown)
+  }
 }
+
+/// One ambience note and one foley note lacking `seed`/`output`, and one
+/// foley note that already has both.
+private let foleyScreenplayText = """
+  Title: Teacup
+
+  INT. KITCHEN - MORNING
+
+  [[ {"ambience": {
+    "prompt": "kettle hiss, quiet kitchen"
+  }} ]]
+
+  MARGARET
+  More tea?
+
+  [[ {"foley": {
+    "prompt": "teacup set down on a saucer",
+    "take": 2.0
+  }} ]]
+
+  She leaves.
+
+  [[ {"foley": {
+    "prompt": "door slams shut",
+    "seed": 5,
+    "output": "sfx/door.wav"
+  }} ]]
+
+  FADE OUT.
+
+  """

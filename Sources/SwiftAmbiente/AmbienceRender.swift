@@ -156,10 +156,19 @@ public enum AmbienceRendering {
   /// |---|---|
   /// | `notRendered` | no WAV at `output` |
   /// | `unknown` | WAV, no record |
-  /// | `changed` | WAV, record digest ≠ note digest — or the record cannot be parsed (with `warning`) |
-  /// | `current` | WAV, record digest == note digest |
+  /// | `changed` | WAV, record digest ≠ note digest, or the record was written for a `foley` note — or the record cannot be parsed (with `warning`) |
+  /// | `current` | WAV, `ambience` record whose digest == note digest |
   public static func renderStatus(
     for ambience: GlosaCore.Ambience, output: URL
+  ) -> AmbienceRenderStatus {
+    renderStatus(output: output, digest: ambience.renderDigest, directiveKey: "ambience")
+  }
+
+  /// The shared state machine: `directiveKey` is the directive the caller's
+  /// note is (`"ambience"` / `"foley"`); a record naming another directive is
+  /// `changed` even when the digests match.
+  static func renderStatus(
+    output: URL, digest: String, directiveKey: String
   ) -> AmbienceRenderStatus {
     let fileManager = FileManager.default
     var isDirectory: ObjCBool = false
@@ -185,8 +194,8 @@ public enum AmbienceRendering {
       )
     }
 
-    let state: AmbienceRenderState = record.digest == ambience.renderDigest ? .current : .changed
-    return AmbienceRenderStatus(state: state, record: record)
+    let current = record.directive.key == directiveKey && record.digest == digest
+    return AmbienceRenderStatus(state: current ? .current : .changed, record: record)
   }
 }
 

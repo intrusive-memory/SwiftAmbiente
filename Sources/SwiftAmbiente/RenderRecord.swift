@@ -2,8 +2,9 @@
 //  RenderRecord.swift
 //  SwiftAmbiente
 //
-//  The render record written beside every rendered ambience take
-//  (`<output>.json`, Produciesta REQUIREMENTS-ambience § 4.2).
+//  The render record written beside every rendered ambience or foley take
+//  (`<output>.json`, Produciesta REQUIREMENTS-ambience § 4.2,
+//  REQUIREMENTS-foley § 4.2).
 //
 
 import Foundation
@@ -11,26 +12,66 @@ import GlosaCore
 
 /// What was rendered into a take WAV, stored beside it as `<output>.json`.
 ///
-/// On disk:
+/// The record names the directive that produced the take. On disk, an
+/// `ambience` take:
 ///
 /// ```json
 /// {"ambience": {…schema object…}, "digest": "…", "generator": "stable-audio",
 ///  "swiftAmbiente": "0.2.0", "rendered": "2026-11-07T21:09:57Z"}
 /// ```
 ///
-/// `ambience` is written in GlosaCore's **schema form** (a bare `ambience`
+/// and a `foley` take (Produciesta REQUIREMENTS-foley § 4.2):
+///
+/// ```json
+/// {"foley": {…schema object…}, "digest": "…", "generator": "stable-audio",
+///  "swiftAmbiente": "0.3.0", "rendered": "2026-11-08T10:00:00Z"}
+/// ```
+///
+/// Exactly one of `ambience` or `foley` is present; a record with both or
+/// neither does not decode. Ambience records written before foley support have
+/// exactly the first shape and decode unchanged.
+///
+/// The directive object is written in GlosaCore's **schema form** (a bare
 /// object, as in the screenplay note), not the synthesized `Codable` form.
 ///
 /// `digest` is the note's `renderDigest` **as written** — the value
-/// ``AmbienceRendering/renderState(for:output:)`` compares against. The stored
-/// `ambience` is the *effective* object (defaults that decided the take filled
-/// in), so recomputing a digest from it will generally differ from `digest`;
-/// always compare `digest`.
+/// ``AmbienceRendering/renderState(for:output:)`` (or its foley overload)
+/// compares against. The stored directive is the *effective* object (defaults
+/// that decided the take filled in), so recomputing a digest from it will
+/// generally differ from `digest`; always compare `digest`.
 public struct RenderRecord: Sendable, Equatable, Codable {
-  /// The effective `ambience` that produced the take: the note as written, with
+  /// The directive that produced a take, as its effective note.
+  public enum Directive: Sendable, Equatable {
+    /// An `ambience` bed.
+    case ambience(GlosaCore.Ambience)
+    /// A `foley` spot effect.
+    case foley(GlosaCore.Foley)
+
+    /// The directive's key in the record (`"ambience"` or `"foley"`).
+    public var key: String {
+      switch self {
+      case .ambience: return "ambience"
+      case .foley: return "foley"
+      }
+    }
+  }
+
+  /// The effective note that produced the take: the note as written, with
   /// `take`, `steps`, `cfg` and `model` filled in with the values actually used.
   /// `documentIndex` is not part of the schema and decodes as `0`.
-  public var ambience: GlosaCore.Ambience
+  public var directive: Directive
+
+  /// The effective `ambience`, when the take is an ambience bed.
+  public var ambience: GlosaCore.Ambience? {
+    if case .ambience(let ambience) = directive { return ambience }
+    return nil
+  }
+
+  /// The effective `foley`, when the take is a foley effect.
+  public var foley: GlosaCore.Foley? {
+    if case .foley(let foley) = directive { return foley }
+    return nil
+  }
 
   /// `renderDigest` of the note as written (lowercase hex SHA-256).
   public var digest: String
@@ -45,34 +86,84 @@ public struct RenderRecord: Sendable, Equatable, Codable {
   public var rendered: Date
 
   public init(
-    ambience: GlosaCore.Ambience,
+    directive: Directive,
     digest: String,
     generator: String,
     swiftAmbiente: String = SwiftAmbiente.version,
     rendered: Date
   ) {
-    self.ambience = ambience
+    self.directive = directive
     self.digest = digest
     self.generator = generator
     self.swiftAmbiente = swiftAmbiente
     self.rendered = Date(timeIntervalSince1970: rendered.timeIntervalSince1970.rounded(.down))
   }
 
+  /// A record for an `ambience` take.
+  public init(
+    ambience: GlosaCore.Ambience,
+    digest: String,
+    generator: String,
+    swiftAmbiente: String = SwiftAmbiente.version,
+    rendered: Date
+  ) {
+    self.init(
+      directive: .ambience(ambience), digest: digest, generator: generator,
+      swiftAmbiente: swiftAmbiente, rendered: rendered)
+  }
+
+  /// A record for a `foley` take.
+  public init(
+    foley: GlosaCore.Foley,
+    digest: String,
+    generator: String,
+    swiftAmbiente: String = SwiftAmbiente.version,
+    rendered: Date
+  ) {
+    self.init(
+      directive: .foley(foley), digest: digest, generator: generator,
+      swiftAmbiente: swiftAmbiente, rendered: rendered)
+  }
+
   // MARK: Codable
 
   private enum CodingKeys: String, CodingKey {
-    case ambience, digest, generator, swiftAmbiente, rendered
+    case ambience, foley, digest, generator, swiftAmbiente, rendered
   }
 
   public init(from decoder: any Decoder) throws {
     let c = try decoder.container(keyedBy: CodingKeys.self)
-    let schema = try c.decode(PlainJSONValue.self, forKey: .ambience).value
-    do {
-      self.ambience = try GlosaCore.Ambience(schemaJSON: schema)
-    } catch {
+    let hasAmbience = c.contains(.ambience)
+    let hasFoley = c.contains(.foley)
+    switch (hasAmbience, hasFoley) {
+    case (true, false):
+      let schema = try c.decode(PlainJSONValue.self, forKey: .ambience).value
+      do {
+        self.directive = .ambience(try GlosaCore.Ambience(schemaJSON: schema))
+      } catch {
+        throw DecodingError.dataCorruptedError(
+          forKey: .ambience, in: c,
+          debugDescription: "`ambience` is not a valid ambience object: \(error)")
+      }
+    case (false, true):
+      let schema = try c.decode(PlainJSONValue.self, forKey: .foley).value
+      do {
+        self.directive = .foley(try GlosaCore.Foley(schemaJSON: schema))
+      } catch {
+        throw DecodingError.dataCorruptedError(
+          forKey: .foley, in: c,
+          debugDescription: "`foley` is not a valid foley object: \(error)")
+      }
+    case (true, true):
       throw DecodingError.dataCorruptedError(
-        forKey: .ambience, in: c,
-        debugDescription: "`ambience` is not a valid ambience object: \(error)")
+        forKey: .foley, in: c,
+        debugDescription: "a render record holds exactly one of `ambience` or `foley`, not both")
+    case (false, false):
+      throw DecodingError.keyNotFound(
+        CodingKeys.ambience,
+        DecodingError.Context(
+          codingPath: c.codingPath,
+          debugDescription: "a render record holds exactly one of `ambience` or `foley`"))
     }
     self.digest = try c.decode(String.self, forKey: .digest)
     self.generator = try c.decode(String.self, forKey: .generator)
@@ -89,7 +180,12 @@ public struct RenderRecord: Sendable, Equatable, Codable {
 
   public func encode(to encoder: any Encoder) throws {
     var c = encoder.container(keyedBy: CodingKeys.self)
-    try c.encode(PlainJSONValue(ambience.schemaJSON()), forKey: .ambience)
+    switch directive {
+    case .ambience(let ambience):
+      try c.encode(PlainJSONValue(ambience.schemaJSON()), forKey: .ambience)
+    case .foley(let foley):
+      try c.encode(PlainJSONValue(foley.schemaJSON()), forKey: .foley)
+    }
     try c.encode(digest, forKey: .digest)
     try c.encode(generator, forKey: .generator)
     try c.encode(swiftAmbiente, forKey: .swiftAmbiente)
@@ -119,7 +215,7 @@ public struct RenderRecord: Sendable, Equatable, Codable {
 /// `{"object": [{"key": …, "value": …}]}` to keep member order; the render
 /// record wants the schema object exactly as a note would hold it. Member order
 /// is not preserved through Foundation's JSON coders — harmless here, since
-/// the record's `digest` (not a digest recomputed from `ambience`) is what
+/// the record's `digest` (not a digest recomputed from the directive) is what
 /// render state compares.
 struct PlainJSONValue: Codable {
   let value: GlosaJSONValue
