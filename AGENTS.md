@@ -161,6 +161,18 @@ neural backend runs. Authoritative summary: README "Licensing" and `NOTICE`.
 
 ## Recent Changes
 
+### 0.3.0
+- GLOSA `foley` notes (one-shot spot effects): `AmbienteGenerator.render(foley:to:)` renders a
+  take and writes its render record after the WAV.
+- `RenderRecord` names its directive (`{"ambience": …}` or `{"foley": …}`); a record for the
+  other directive reads `changed`. Ambience records from 0.2.0 decode unchanged.
+  **API change:** `RenderRecord.ambience` is now optional; `RenderRecord.foley` is new.
+- `AmbiencePlanner` returns `foleyEntries` and writes foley `seed` / `output`
+  (`foley/<stem>/fol-<8 hex>.wav`) in the same single screenplay rewrite as ambience.
+  Planner diagnostics now include foley notes.
+- `ambiente render` renders foley takes; the state table gains a `KIND` column.
+- Depends on glosa-av 0.12.0 (GlosaCore `Foley`).
+
 ### 0.2.0
 - GLOSA `ambience` notes: `AmbienteGenerator.render(ambience:to:)` renders a take and
   writes a `<take>.wav.json` render record (digest, generator, version) after the WAV.

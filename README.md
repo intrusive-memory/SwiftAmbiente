@@ -29,7 +29,7 @@ Secuencia, VoxAlta…).
 ## Install
 
 ```swift
-.package(url: "https://github.com/intrusive-memory/SwiftAmbiente.git", from: "0.2.0")
+.package(url: "https://github.com/intrusive-memory/SwiftAmbiente.git", from: "0.3.0")
 ```
 
 ## Library usage

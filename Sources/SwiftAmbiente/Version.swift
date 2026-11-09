@@ -8,5 +8,5 @@ import Foundation
 /// Library version metadata for SwiftAmbiente.
 public enum SwiftAmbiente {
   /// Current version of the SwiftAmbiente library.
-  public static let version = "0.2.0-dev"
+  public static let version = "0.3.0"
 }
