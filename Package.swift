@@ -29,10 +29,11 @@ let package = Package(
     .package(
       url: "https://github.com/intrusive-memory/SwiftAcervo.git", .upToNextMajor(from: "0.25.0")),
 
-    // GLOSA notation: the `ambience` directive (`GlosaCore.Ambience`) that
-    // `AmbienteGenerator.render(ambience:to:)` renders. GlosaCore only.
+    // GLOSA notation: the `ambience` and `foley` directives (`GlosaCore.Ambience`,
+    // `GlosaCore.Foley`) that `AmbienteGenerator.render(ambience:to:)` and
+    // `render(foley:to:)` render. GlosaCore only.
     .package(
-      url: "https://github.com/intrusive-memory/glosa-av.git", .upToNextMajor(from: "0.11.0")),
+      url: "https://github.com/intrusive-memory/glosa-av.git", .upToNextMajor(from: "0.12.0")),
 
     // MLX Swift — the Stable Audio backend (WU2) translates Stability AI's
     // official Python-MLX reference op-for-op into MLX Swift (see

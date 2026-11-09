@@ -65,6 +65,56 @@ private func makeProject() throws -> (directory: URL, screenplay: URL) {
   return (directory, screenplay)
 }
 
+private let foleyScreenplayText = """
+  Title: Tea
+
+  INT. KITCHEN - MORNING
+
+  [[ {"ambience": {
+    "prompt": "kettle hiss, quiet kitchen"
+  }} ]]
+
+  MARGARET
+  More tea?
+
+  [[ {"foley": {
+    "prompt": "teacup set down on a saucer",
+    "take": 2.0
+  }} ]]
+
+  She leaves.
+
+  [[ {"foley": {
+    "prompt": "door slams shut",
+    "seed": 5,
+    "output": "sfx/door.wav"
+  }} ]]
+
+  FADE OUT.
+
+  """
+
+private func makeFoleyProject() throws -> (directory: URL, screenplay: URL) {
+  let directory = FileManager.default.temporaryDirectory
+    .appendingPathComponent("AmbienteRenderFoley-\(UUID().uuidString)", isDirectory: true)
+  try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+  let screenplay = directory.appendingPathComponent("episode.fountain")
+  try Data(foleyScreenplayText.utf8).write(to: screenplay)
+  return (directory, screenplay)
+}
+
+/// Returns a short silent WAV; never touches a model.
+private struct FakeGenerator: AmbienteGenerator {
+  let generatorId = "fake"
+  let displayName = "Fake"
+  func isAvailable() async -> Bool { true }
+  func generate(prompt: String, settings: GenerationSettings) async throws -> Data {
+    let frames = max(1, Int(settings.durationSeconds * 8_000))
+    return PCMAudio(samples: [Float](repeating: 0, count: frames), sampleRate: 8_000, channels: 1)
+      .wavData()
+  }
+}
+
 /// Every file under `directory` (relative path → bytes).
 private func snapshot(_ directory: URL) throws -> [String: Data] {
   var result: [String: Data] = [:]
@@ -241,6 +291,75 @@ struct AmbienteRenderCommandTests {
     let lines = table.components(separatedBy: "\n")
     #expect(lines.first { $0.contains("busy bar") }?.contains("rendered") == true)
     #expect(lines.first { $0.contains("traffic") }?.contains("failed") == true)
+  }
+
+  @Test("The state table has a KIND column and rows for both kinds in document order")
+  func foleyTable() async throws {
+    let (directory, screenplay) = try makeFoleyProject()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let before = try snapshot(directory)
+
+    let cmd = try #require(
+      try AmbienteRootCommand.parseAsRoot(["render", screenplay.path, "--dry-run"])
+        as? AmbienteRenderCommand)
+    var emitted: [String] = []
+    let failures = try await cmd.execute { emitted.append($0) }
+    #expect(failures == 0)
+    #expect(try snapshot(directory) == before)  // dry run writes no files
+
+    let lines = emitted.joined(separator: "\n").components(separatedBy: "\n")
+    #expect(lines.contains { $0.hasPrefix("NOTE") && $0.contains("KIND") })
+
+    let kettle = try #require(lines.first { $0.contains("kettle hiss") })
+    #expect(kettle.contains("ambience"))
+    let cup = try #require(lines.first { $0.contains("teacup") })
+    #expect(cup.contains("foley"))
+    #expect(cup.contains("notRendered"))
+    #expect(cup.contains("would render"))
+    #expect(cup.contains("foley/episode/fol-"))
+    let door = try #require(lines.first { $0.contains("door slams") })
+    #expect(door.contains("foley"))
+    #expect(door.contains("sfx/door.wav"))
+
+    // Document order: kettle, teacup, door.
+    let k = try #require(lines.firstIndex { $0.contains("kettle hiss") })
+    let c = try #require(lines.firstIndex { $0.contains("teacup") })
+    let d = try #require(lines.firstIndex { $0.contains("door slams") })
+    #expect(k < c && c < d)
+  }
+
+  @Test("Foley takes are rendered with the injected generator; current ones only with --force")
+  func foleyRenders() async throws {
+    let (directory, screenplay) = try makeFoleyProject()
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    let cmd = try #require(
+      try AmbienteRootCommand.parseAsRoot(["render", screenplay.path]) as? AmbienteRenderCommand)
+    var emitted: [String] = []
+    let failures = try await cmd.execute(loadGenerator: { _ in FakeGenerator() }) {
+      emitted.append($0)
+    }
+    #expect(failures == 0)
+
+    let plan = try AmbiencePlanner.plan(screenplay: screenplay, dryRun: true)
+    #expect(plan.entries.count == 1)
+    #expect(plan.foleyEntries.count == 2)
+    for entry in plan.foleyEntries {
+      let output = try #require(entry.output)
+      #expect(FileManager.default.fileExists(atPath: output.path))
+      #expect(entry.state == .current)
+      let record = try Data(contentsOf: AmbienceRendering.recordURL(for: output))
+      let json = try #require(try JSONSerialization.jsonObject(with: record) as? [String: Any])
+      #expect(json["foley"] != nil)
+      #expect(json["ambience"] == nil)
+    }
+    let table = emitted.joined(separator: "\n")
+    #expect(table.contains("KIND"))
+    #expect(table.contains("rendered"))
+
+    // Everything is current now: nothing to do without --force, all with it.
+    #expect(AmbienteRenderCommand.foleyEntriesToRender(in: plan, force: false).isEmpty)
+    #expect(AmbienteRenderCommand.foleyEntriesToRender(in: plan, force: true).count == 2)
   }
 
   @Test("A missing screenplay is a validation error")

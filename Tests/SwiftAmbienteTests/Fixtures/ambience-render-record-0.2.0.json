@@ -1,0 +1,16 @@
+{
+  "ambience" : {
+    "cfg" : 7,
+    "gain" : -3,
+    "model" : "stable-audio-3-small-sfx",
+    "output" : "ambience/episode-1/amb-1a2b3c4d.wav",
+    "prompt" : "harbour at dawn",
+    "seed" : 99,
+    "steps" : 8,
+    "take" : 0.5
+  },
+  "digest" : "0f3c8e2a9b7d4c1e5f6a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e",
+  "generator" : "stable-audio",
+  "rendered" : "2026-11-07T21:09:57Z",
+  "swiftAmbiente" : "0.2.0"
+}

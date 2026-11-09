@@ -203,13 +203,13 @@ struct AmbienceRenderTests {
       write: AtomicFileWriter.write)
 
     // Effective values filled; written keys kept.
-    #expect(record.ambience.take == 0.5)
-    #expect(record.ambience.model == GlosaCore.Ambience.defaultModel)
-    #expect(record.ambience.steps == GenerationSettings.default.steps)
-    #expect(record.ambience.cfg == GenerationSettings.default.cfgScale)
-    #expect(record.ambience.seed == 99)
-    #expect(record.ambience.gain == -3)
-    #expect(record.ambience.output == "ambience/ep/amb.wav")
+    #expect(record.ambience?.take == 0.5)
+    #expect(record.ambience?.model == GlosaCore.Ambience.defaultModel)
+    #expect(record.ambience?.steps == GenerationSettings.default.steps)
+    #expect(record.ambience?.cfg == GenerationSettings.default.cfgScale)
+    #expect(record.ambience?.seed == 99)
+    #expect(record.ambience?.gain == -3)
+    #expect(record.ambience?.output == "ambience/ep/amb.wav")
     #expect(record.rendered == Date(timeIntervalSince1970: 1_794_000_000))
 
     let data = try Data(contentsOf: AmbienceRendering.recordURL(for: output))

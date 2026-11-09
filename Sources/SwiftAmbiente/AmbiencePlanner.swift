@@ -2,11 +2,12 @@
 //  AmbiencePlanner.swift
 //  SwiftAmbiente
 //
-//  Plans the ambience beds of a screenplay: finds its `ambience` notes,
-//  resolves each note's `output`, writes back missing `seed` / `output` keys,
-//  and reports each take's render state (Produciesta REQUIREMENTS-ambience
-//  §§ 3.1–3.3, decisions D-8 and D-13). Shared by `ambiente render` and
-//  Produciesta's export.
+//  Plans the ambience beds and foley effects of a screenplay: finds its
+//  `ambience` and `foley` notes in one pass, resolves each note's `output`,
+//  writes back missing `seed` / `output` keys in one rewrite, and reports each
+//  take's render state (Produciesta REQUIREMENTS-ambience §§ 3.1–3.3,
+//  decisions D-8 and D-13; REQUIREMENTS-foley §§ 3.2, 4.3, decision D-5).
+//  Shared by `ambiente render` and Produciesta's export.
 //
 
 import Foundation
@@ -63,7 +64,57 @@ public struct AmbiencePlanEntry: Sendable, Equatable {
   }
 }
 
-/// The ambience plan of one screenplay.
+/// One `foley` note of a screenplay, as planned (REQUIREMENTS-foley § 4.3,
+/// D-5). Mirrors ``AmbiencePlanEntry``.
+public struct FoleyPlanEntry: Sendable, Equatable {
+  /// The note's position among the screenplay's standalone notes (its
+  /// `documentIndex`).
+  public var noteIndex: Int
+
+  /// The 1-based line of the screenplay on which the note's `[[` sits.
+  public var line: Int
+
+  /// The note, including any `seed` / `output` this plan assigned (also in a
+  /// dry run, where they are not written to the file).
+  public var foley: GlosaCore.Foley
+
+  /// `true` when this plan assigned `seed`.
+  public var assignedSeed: Bool
+
+  /// `true` when this plan assigned `output`.
+  public var assignedOutput: Bool
+
+  /// The resolved take WAV location. `nil` for a note with no `output` that
+  /// this plan did not assign one to (write-back off, or a note without a
+  /// prompt).
+  public var output: URL?
+
+  /// The render state of the take at `output`; `nil` when `output` is `nil`.
+  public var status: AmbienceRenderStatus?
+
+  /// `status?.state`.
+  public var state: AmbienceRenderState? { status?.state }
+
+  public init(
+    noteIndex: Int,
+    line: Int,
+    foley: GlosaCore.Foley,
+    assignedSeed: Bool = false,
+    assignedOutput: Bool = false,
+    output: URL? = nil,
+    status: AmbienceRenderStatus? = nil
+  ) {
+    self.noteIndex = noteIndex
+    self.line = line
+    self.foley = foley
+    self.assignedSeed = assignedSeed
+    self.assignedOutput = assignedOutput
+    self.output = output
+    self.status = status
+  }
+}
+
+/// The ambience and foley plan of one screenplay.
 public struct AmbiencePlan: Sendable, Equatable {
   /// The screenplay planned.
   public var screenplay: URL
@@ -78,14 +129,19 @@ public struct AmbiencePlan: Sendable, Equatable {
   /// Every `ambience` note, `stop` notes included, in document order.
   public var entries: [AmbiencePlanEntry]
 
-  /// Parser diagnostics for `ambience` notes (an unreadable note is reported
-  /// here and has no entry). `line` is the screenplay line of the note.
+  /// Every `foley` note, in document order (REQUIREMENTS-foley § 4.3).
+  public var foleyEntries: [FoleyPlanEntry]
+
+  /// Parser diagnostics for `ambience` and `foley` notes (an unreadable note
+  /// is reported here and has no entry). `line` is the screenplay line of the
+  /// note.
   public var diagnostics: [GlosaDiagnostic]
 
   /// Planner warnings (e.g. an explicit PROJECT.md that does not exist).
   public var warnings: [String]
 
-  /// `true` when the screenplay file was rewritten.
+  /// `true` when the screenplay file was rewritten (once, for ambience and
+  /// foley write-back together).
   public var wroteBack: Bool
 
   public init(
@@ -93,6 +149,7 @@ public struct AmbiencePlan: Sendable, Equatable {
     projectMarkdown: URL?,
     outputBase: URL,
     entries: [AmbiencePlanEntry],
+    foleyEntries: [FoleyPlanEntry] = [],
     diagnostics: [GlosaDiagnostic] = [],
     warnings: [String] = [],
     wroteBack: Bool = false
@@ -101,6 +158,7 @@ public struct AmbiencePlan: Sendable, Equatable {
     self.projectMarkdown = projectMarkdown
     self.outputBase = outputBase
     self.entries = entries
+    self.foleyEntries = foleyEntries
     self.diagnostics = diagnostics
     self.warnings = warnings
     self.wroteBack = wroteBack
@@ -109,12 +167,29 @@ public struct AmbiencePlan: Sendable, Equatable {
 
 // MARK: - Planner
 
-/// Plans a screenplay's ambience beds (REQUIREMENTS-ambience §§ 3.1–3.3).
+/// An `ambience` or `foley` note, so the planner walks both in document order.
+private enum PlannedNote {
+  case ambience(GlosaCore.Ambience)
+  case foley(GlosaCore.Foley)
+
+  var documentIndex: Int {
+    switch self {
+    case .ambience(let ambience): ambience.documentIndex
+    case .foley(let foley): foley.documentIndex
+    }
+  }
+}
+
+/// Plans a screenplay's ambience beds and foley effects
+/// (REQUIREMENTS-ambience §§ 3.1–3.3; REQUIREMENTS-foley §§ 3.2, 4.3).
 ///
 /// ```swift
 /// let plan = try AmbiencePlanner.plan(screenplay: url)
 /// for entry in plan.entries where entry.state == .notRendered || entry.state == .changed {
 ///   _ = try await generator.render(ambience: entry.ambience, to: entry.output!)
+/// }
+/// for entry in plan.foleyEntries where entry.state == .notRendered || entry.state == .changed {
+///   _ = try await generator.render(foley: entry.foley, to: entry.output!)
 /// }
 /// ```
 public enum AmbiencePlanner {
@@ -122,12 +197,16 @@ public enum AmbiencePlanner {
   /// Plans `screenplay`.
   ///
   /// 1. Finds the standalone notes (`GlosaFountainNotes`) and parses them with
-  ///    `GlosaParser`; every `ambience` note becomes an entry.
-  /// 2. Write-back (§ 3.2, D-8): a non-`stop` note with a prompt that lacks
-  ///    `seed` gets a random `UInt32`; one that lacks `output` gets
-  ///    `ambience/<screenplay stem>/amb-<8 hex>.wav`. The keys are inserted
-  ///    into those notes only, and the file is replaced atomically. Every byte
-  ///    outside the rewritten notes is kept.
+  ///    `GlosaParser`; every `ambience` note becomes an entry, every `foley`
+  ///    note a foley entry.
+  /// 2. Write-back (§ 3.2, D-8): a non-`stop` ambience note with a prompt that
+  ///    lacks `seed` gets a random `UInt32`; one that lacks `output` gets
+  ///    `ambience/<screenplay stem>/amb-<8 hex>.wav`. A foley note with a
+  ///    prompt is treated the same way, its fresh output being
+  ///    `foley/<screenplay stem>/fol-<8 hex>.wav`. The keys are inserted into
+  ///    those notes only, and the file is replaced atomically — **once**, for
+  ///    ambience and foley together (D-5). Every byte outside the rewritten
+  ///    notes is kept.
   /// 3. Resolves `output` (§ 3.3) and reads the render state (§ 3.1).
   ///
   /// - Parameters:
@@ -156,7 +235,8 @@ public enum AmbiencePlanner {
   /// ``plan(screenplay:projectMarkdown:writeBack:dryRun:)`` drawing seeds and
   /// output names from `generator` (tests pass a seeded generator).
   ///
-  /// Draw order is document order; per note, `seed` first, then `output`.
+  /// Draw order is document order across ambience and foley notes; per note,
+  /// `seed` first, then `output`.
   public static func plan<G: RandomNumberGenerator>(
     screenplay: URL,
     projectMarkdown: URL? = nil,
@@ -164,12 +244,27 @@ public enum AmbiencePlanner {
     dryRun: Bool = false,
     using generator: inout G
   ) throws -> AmbiencePlan {
+    try plan(
+      screenplay: screenplay, projectMarkdown: projectMarkdown, writeBack: writeBack,
+      dryRun: dryRun, using: &generator, write: AtomicFileWriter.write)
+  }
+
+  /// ``plan(screenplay:projectMarkdown:writeBack:dryRun:using:)`` with the
+  /// screenplay writer injected (tests count the rewrites through `write`).
+  static func plan<G: RandomNumberGenerator>(
+    screenplay: URL,
+    projectMarkdown: URL? = nil,
+    writeBack: Bool = true,
+    dryRun: Bool = false,
+    using generator: inout G,
+    write: (Data, URL) throws -> Void
+  ) throws -> AmbiencePlan {
     var warnings: [String] = []
     let foundProjectMarkdown = Self.projectMarkdown(
       forScreenplay: screenplay, explicit: projectMarkdown)
     if let projectMarkdown, foundProjectMarkdown == nil {
       warnings.append(
-        "PROJECT.md \(projectMarkdown.path) does not exist; relative ambience outputs resolve against the screenplay directory."
+        "PROJECT.md \(projectMarkdown.path) does not exist; relative ambience and foley outputs resolve against the screenplay directory."
       )
     }
     let base = outputBase(forScreenplay: screenplay, projectMarkdown: foundProjectMarkdown)
@@ -180,52 +275,102 @@ public enum AmbiencePlanner {
     let parsed = GlosaParser().parseFountainWithDiagnostics(notes: notes.map(\.text))
     let lines = lineNumbers(of: notes.map(\.range.lowerBound), in: text)
 
-    // Outputs already taken in this document, so a fresh name never collides.
+    // Outputs already taken in this document (either kind), so a fresh name
+    // never collides.
     var usedOutputs = Set<String>()
-    for ambience in parsed.score.ambiences {
-      if let output = ambience.output {
-        usedOutputs.insert(resolveOutput(output, base: base).path)
-      }
+    for output in parsed.score.ambiences.compactMap(\.output)
+      + parsed.score.foleys.compactMap(\.output)
+    {
+      usedOutputs.insert(resolveOutput(output, base: base).path)
     }
+
+    // Both kinds in document order, so seeds and names are drawn in the order
+    // the notes appear.
+    let ordered =
+      (parsed.score.ambiences.map(PlannedNote.ambience)
+      + parsed.score.foleys.map(PlannedNote.foley))
+      .sorted { $0.documentIndex < $1.documentIndex }
 
     let stem = screenplay.deletingPathExtension().lastPathComponent
     var entries: [AmbiencePlanEntry] = []
+    var foleyEntries: [FoleyPlanEntry] = []
     var replacements: [(range: Range<String.Index>, note: String)] = []
 
-    for original in parsed.score.ambiences {
-      let index = original.documentIndex
-      var ambience = original
-      var assignedSeed = false
-      var assignedOutput = false
+    func assignOutput(directory: String, prefix: String) -> String {
+      let path = freshOutput(
+        stem: stem, base: base, used: usedOutputs, directory: directory, prefix: prefix,
+        using: &generator)
+      usedOutputs.insert(resolveOutput(path, base: base).path)
+      return path
+    }
 
-      if writeBack, needsWriteBack(original) {
-        if ambience.seed == nil {
-          ambience.seed = UInt32.random(in: .min ... .max, using: &generator)
-          assignedSeed = true
+    for note in ordered {
+      switch note {
+      case .ambience(let original):
+        let index = original.documentIndex
+        var ambience = original
+        var assignedSeed = false
+        var assignedOutput = false
+
+        if writeBack, needsWriteBack(original) {
+          if ambience.seed == nil {
+            ambience.seed = UInt32.random(in: .min ... .max, using: &generator)
+            assignedSeed = true
+          }
+          if ambience.output == nil {
+            ambience.output = assignOutput(directory: "ambience", prefix: "amb")
+            assignedOutput = true
+          }
+          let noteText = String(text[notes[index].range])
+          replacements.append(
+            (notes[index].range, rewrittenNote(noteText, original: original, updated: ambience)))
         }
-        if ambience.output == nil {
-          let path = freshOutput(stem: stem, base: base, used: usedOutputs, using: &generator)
-          usedOutputs.insert(resolveOutput(path, base: base).path)
-          ambience.output = path
-          assignedOutput = true
+
+        let output: URL? =
+          ambience.stop ? nil : ambience.output.map { resolveOutput($0, base: base) }
+        entries.append(
+          AmbiencePlanEntry(
+            noteIndex: index,
+            line: lines[index],
+            ambience: ambience,
+            assignedSeed: assignedSeed,
+            assignedOutput: assignedOutput,
+            output: output,
+            status: output.map { AmbienceRendering.renderStatus(for: ambience, output: $0) }
+          ))
+
+      case .foley(let original):
+        let index = original.documentIndex
+        var foley = original
+        var assignedSeed = false
+        var assignedOutput = false
+
+        if writeBack, needsWriteBack(original) {
+          if foley.seed == nil {
+            foley.seed = UInt32.random(in: .min ... .max, using: &generator)
+            assignedSeed = true
+          }
+          if foley.output == nil {
+            foley.output = assignOutput(directory: "foley", prefix: "fol")
+            assignedOutput = true
+          }
+          let noteText = String(text[notes[index].range])
+          replacements.append(
+            (notes[index].range, rewrittenNote(noteText, original: original, updated: foley)))
         }
-        let noteText = String(text[notes[index].range])
-        replacements.append(
-          (notes[index].range, rewrittenNote(noteText, original: original, updated: ambience)))
+
+        let output = foley.output.map { resolveOutput($0, base: base) }
+        foleyEntries.append(
+          FoleyPlanEntry(
+            noteIndex: index,
+            line: lines[index],
+            foley: foley,
+            assignedSeed: assignedSeed,
+            assignedOutput: assignedOutput,
+            output: output,
+            status: output.map { AmbienceRendering.renderStatus(for: foley, output: $0) }
+          ))
       }
-
-      let output: URL? =
-        ambience.stop ? nil : ambience.output.map { resolveOutput($0, base: base) }
-      entries.append(
-        AmbiencePlanEntry(
-          noteIndex: index,
-          line: lines[index],
-          ambience: ambience,
-          assignedSeed: assignedSeed,
-          assignedOutput: assignedOutput,
-          output: output,
-          status: output.map { AmbienceRendering.renderStatus(for: ambience, output: $0) }
-        ))
     }
 
     var wroteBack = false
@@ -243,17 +388,19 @@ public enum AmbiencePlanner {
         cursor = replacement.range.upperBound
       }
       rewritten.append(contentsOf: text[cursor...])
-      try AtomicFileWriter.write(Data(rewritten.utf8), to: screenplay.resolvingSymlinksInPath())
+      // One rewrite for every ambience and foley replacement (D-5).
+      try write(Data(rewritten.utf8), screenplay.resolvingSymlinksInPath())
       wroteBack = true
     }
 
     let diagnostics = parsed.diagnostics.compactMap { diagnostic -> GlosaDiagnostic? in
       // The parser numbers lines by note (note index + 1); report the
-      // screenplay line instead, and keep only diagnostics about ambience
-      // notes (the parser sees no dialogue here, so its dialogue-related
-      // diagnostics are meaningless).
+      // screenplay line instead, and keep only diagnostics about ambience and
+      // foley notes (the parser sees no dialogue here, so its
+      // dialogue-related diagnostics are meaningless).
       guard let line = diagnostic.line, line >= 1, line <= notes.count,
         notes[line - 1].text.contains("\"ambience\"")
+          || notes[line - 1].text.contains("\"foley\"")
       else { return nil }
       var remapped = diagnostic
       remapped.line = lines[line - 1]
@@ -265,6 +412,7 @@ public enum AmbiencePlanner {
       projectMarkdown: foundProjectMarkdown,
       outputBase: base,
       entries: entries,
+      foleyEntries: foleyEntries,
       diagnostics: diagnostics,
       warnings: warnings,
       wroteBack: wroteBack
@@ -313,15 +461,26 @@ public enum AmbiencePlanner {
     return ambience.seed == nil || ambience.output == nil
   }
 
-  /// A fresh `ambience/<stem>/amb-<8 hex>.wav` that no other note uses and no
-  /// file occupies.
+  /// Whether `foley` gets `seed` / `output` written back
+  /// (REQUIREMENTS-foley § 3.2): has a prompt, and lacks either key.
+  static func needsWriteBack(_ foley: GlosaCore.Foley) -> Bool {
+    guard let prompt = foley.prompt,
+      !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    else { return false }
+    return foley.seed == nil || foley.output == nil
+  }
+
+  /// A fresh `<directory>/<stem>/<prefix>-<8 hex>.wav` (by default
+  /// `ambience/<stem>/amb-<8 hex>.wav`; foley uses `foley/<stem>/fol-…`) that
+  /// no other note uses and no file occupies.
   static func freshOutput<G: RandomNumberGenerator>(
-    stem: String, base: URL, used: Set<String>, using generator: inout G
+    stem: String, base: URL, used: Set<String>, directory: String = "ambience",
+    prefix: String = "amb", using generator: inout G
   ) -> String {
     var path = ""
     for _ in 0..<64 {
       let hex = String(format: "%08x", UInt32.random(in: .min ... .max, using: &generator))
-      path = "ambience/\(stem)/amb-\(hex).wav"
+      path = "\(directory)/\(stem)/\(prefix)-\(hex).wav"
       let resolved = resolveOutput(path, base: base)
       if !used.contains(resolved.path),
         !FileManager.default.fileExists(atPath: resolved.path)
@@ -355,10 +514,37 @@ public enum AmbiencePlanner {
     if original.seed == nil, updated.seed != nil { keyLines.append("seed") }
     if original.output == nil, updated.output != nil { keyLines.append("output") }
 
-    let canonicalLines = canonicalKeyLines(for: updated, keys: keyLines)
+    var subset = GlosaCore.Ambience(documentIndex: 0)
+    subset.seed = keyLines.contains("seed") ? updated.seed : nil
+    subset.output = keyLines.contains("output") ? updated.output : nil
+    let canonicalLines = canonicalKeyLines(serialized: subset.serialize(), keys: keyLines)
     if canonicalLines.count == keyLines.count,
       let inserted = insertingKeyLines(canonicalLines, into: note),
       reparsedAmbience(inserted, documentIndex: updated.documentIndex) == updated
+    {
+      return inserted
+    }
+    return updated.serialize()
+  }
+
+  /// ``rewrittenNote(_:original:updated:)`` for a `foley` note: the same
+  /// line insertion after the opening `{"foley": {` line, with the same
+  /// fallback to `updated.serialize()`.
+  static func rewrittenNote(
+    _ note: String, original: GlosaCore.Foley, updated: GlosaCore.Foley
+  ) -> String {
+    var keyLines: [String] = []
+    if original.seed == nil, updated.seed != nil { keyLines.append("seed") }
+    if original.output == nil, updated.output != nil { keyLines.append("output") }
+
+    let subset = GlosaCore.Foley(
+      documentIndex: 0,
+      seed: keyLines.contains("seed") ? updated.seed : nil,
+      output: keyLines.contains("output") ? updated.output : nil)
+    let canonicalLines = canonicalKeyLines(serialized: subset.serialize(), keys: keyLines)
+    if canonicalLines.count == keyLines.count,
+      let inserted = insertingKeyLines(canonicalLines, into: note, directive: "foley"),
+      reparsedFoley(inserted, documentIndex: updated.documentIndex) == updated
     {
       return inserted
     }
@@ -371,7 +557,13 @@ public enum AmbiencePlanner {
     var subset = GlosaCore.Ambience(documentIndex: 0)
     subset.seed = keys.contains("seed") ? ambience.seed : nil
     subset.output = keys.contains("output") ? ambience.output : nil
-    let lines = subset.serialize().components(separatedBy: "\n")
+    return canonicalKeyLines(serialized: subset.serialize(), keys: keys)
+  }
+
+  /// The `"key": value` lines for `keys` in `serialized` (a note holding only
+  /// those keys), without indent or comma.
+  static func canonicalKeyLines(serialized: String, keys: [String]) -> [String] {
+    let lines = serialized.components(separatedBy: "\n")
     return keys.compactMap { key in
       lines.lazy
         .map { $0.trimmingCharacters(in: .whitespaces) }
@@ -381,9 +573,11 @@ public enum AmbiencePlanner {
   }
 
   /// `note` with `keyLines` inserted as whole lines right after the line that
-  /// opens the `ambience` object, or `nil` when that line carries anything
-  /// after the `{` or the next line is not a key.
-  static func insertingKeyLines(_ keyLines: [String], into note: String) -> String? {
+  /// opens the `directive` object (`ambience` by default), or `nil` when that
+  /// line carries anything after the `{` or the next line is not a key.
+  static func insertingKeyLines(
+    _ keyLines: [String], into note: String, directive: String = "ambience"
+  ) -> String? {
     guard !keyLines.isEmpty, note.hasPrefix("[[") else { return nil }
     var i = note.index(note.startIndex, offsetBy: 2)
     func skipWhitespace() {
@@ -395,7 +589,7 @@ public enum AmbiencePlanner {
       i = note.index(i, offsetBy: token.count)
       return true
     }
-    guard expect("{"), expect("\"ambience\""), expect(":"), expect("{") else { return nil }
+    guard expect("{"), expect("\"\(directive)\""), expect(":"), expect("{") else { return nil }
 
     // The rest of the opening line must be blank, ending in a line break.
     while i < note.endIndex, !note[i].isNewline {
@@ -425,6 +619,15 @@ public enum AmbiencePlanner {
     else { return nil }
     ambience.documentIndex = documentIndex
     return ambience
+  }
+
+  /// The `foley` a rewritten note parses to, or `nil`.
+  static func reparsedFoley(_ note: String, documentIndex: Int) -> GlosaCore.Foley? {
+    guard let found = GlosaFountainNotes.standaloneNotes(in: note).first,
+      var foley = GlosaParser().parseFountain(notes: [found.text]).foleys.first
+    else { return nil }
+    foley.documentIndex = documentIndex
+    return foley
   }
 
   // MARK: Lines

@@ -128,6 +128,14 @@ calls `render(ambience:to:)`, and prints `AmbienteRenderCommand.stateTable(for:o
 command exits non-zero if any failed. A prompt whose first word is a subcommand
 name needs the explicit `ambiente generate …` form.
 
+`ambiente render` also renders `foley` notes: `AmbienteRenderCommand.foleyEntriesToRender(in:force:)`
+selects them like ambience takes, and `render(foley:to:)` writes the take. Ambience and foley
+jobs run in document order (`noteIndex`); `execute(loadGenerator:emit:)` takes an optional
+generator loader so tests inject a fake. The state table has a `KIND` column (`ambience` /
+`foley`), rows merged by `noteIndex`; `--dry-run` reports foley rows and renders nothing. The
+render record names its directive: `{"foley": …}` vs `{"ambience": …}`; a record for the other
+directive reads `changed`.
+
 Scene presets: `room-tone`, `rain`, `forest`, `city`, `ocean`, `cafe`, `night`.
 
 ## Conventions inherited from the ecosystem
