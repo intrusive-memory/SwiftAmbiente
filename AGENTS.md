@@ -97,6 +97,11 @@ sets a default, the library deliberately does not. MLX executables must ship
 `mlx-swift_Cmlx.bundle` next to the binary (`make install`/`make release` do).
 Model-present tests run with `TEST_RUNNER_ACERVO_MODELS_DIR=<dir>` (the xctest
 runner can't read the App Group container).
+Every suite that loads the model or runs MLX on the GPU must carry the
+`.serializedOnGPU` suite trait (`Tests/SwiftAmbienteTests/GPUSerializationTrait.swift`).
+Swift Testing runs suites in parallel, and concurrent GPU suites on the CI runner's
+virtualized GPU trip the Metal watchdog (`kIOGPUCommandBufferCallbackErrorTimeout`),
+which aborts the whole test process.
 
 ## CLI — `ambiente`
 

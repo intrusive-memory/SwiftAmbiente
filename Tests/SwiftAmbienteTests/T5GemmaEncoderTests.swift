@@ -74,7 +74,7 @@ private enum T5GemmaFixture {
   }
 }
 
-@Suite("T5Gemma text conditioning (Sortie 7)", .serialized)
+@Suite("T5Gemma text conditioning (Sortie 7)", .serialized, .serializedOnGPU)
 struct T5GemmaEncoderTests {
 
   // MARK: Tokenizer parity (model-gated: needs tokenizer.json)

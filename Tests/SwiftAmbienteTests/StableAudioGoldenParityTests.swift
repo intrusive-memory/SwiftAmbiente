@@ -75,7 +75,7 @@ private enum GoldenParityFixture {
   }
 }
 
-@Suite("Stable Audio golden-output parity (Sortie 9)", .serialized)
+@Suite("Stable Audio golden-output parity (Sortie 9)", .serialized, .serializedOnGPU)
 struct StableAudioGoldenParityTests {
 
   // MARK: Model-free: unpatch layout

@@ -19,7 +19,7 @@ import Testing
 
 @testable import SwiftAmbiente
 
-@Suite("AmbienteEngine — procedural fallback", .acervoEnvironment, .serialized)
+@Suite("AmbienteEngine — procedural fallback", .acervoEnvironment, .serialized, .serializedOnGPU)
 struct AmbienteEngineTests {
 
   // `withTempAcervoModelsDirectory` (shared, cross-suite-serialized via
