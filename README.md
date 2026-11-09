@@ -74,6 +74,15 @@ render record, i.e. hand-placed — is kept and reported with a warning unless
 `--force` is given, which overwrites it too. `render` downloads the note's model on first use and has no procedural
 fallback.
 
+`render` also covers GLOSA `{"foley": {...}}` notes (one-shot sound effects): each
+`changed` / `notRendered` foley take is rendered through `render(foley:to:)` alongside
+the ambience beds (every take with `--force`), a foley note without a prompt is not
+rendered, and `--dry-run` reports foley rows without rendering. The state table has a
+`KIND` column (`ambience` / `foley`), rows in document order. A foley take's record
+names its directive — `{"foley": {...}, "digest": ..., ...}` versus
+`{"ambience": {...}, ...}` — and a record written for the other directive reads
+`changed`, so the take is re-rendered.
+
 ## Architecture
 
 | Type | Role |

@@ -3,7 +3,7 @@
 //  AmbienteCLICore
 //
 //  `ambiente render <screenplay>` — plan a screenplay's GLOSA `ambience` notes
-//  with `AmbiencePlanner` (output resolution, render state, seed/output
+//  and `foley` notes with `AmbiencePlanner` (output resolution, render state, seed/output
 //  write-back), generate every `changed` / `notRendered` take, and print a
 //  state table (Produciesta REQUIREMENTS-ambience § 4.4).
 //
@@ -17,9 +17,9 @@ public struct AmbienteRenderCommand: AsyncParsableCommand {
 
   public static let configuration = CommandConfiguration(
     commandName: "render",
-    abstract: "Render the ambience beds of a screenplay's GLOSA `ambience` notes.",
+    abstract: "Render the ambience beds and foley effects of a screenplay's GLOSA notes.",
     discussion: """
-      Plans every `ambience` note in the screenplay: resolves its `output`
+      Plans every `ambience` and `foley` note in the screenplay: resolves its `output`
       (relative paths against the PROJECT.md directory when one is found, else
       the screenplay directory), writes a missing `seed` / `output` back into
       the note, and reads the take's render state. Then generates every
@@ -64,11 +64,15 @@ public struct AmbienteRenderCommand: AsyncParsableCommand {
   /// Plans the screenplay, renders the selected takes (unless `--dry-run`),
   /// and hands the state table to `emit`. Warnings go to stderr.
   ///
-  /// A dry run never resolves a generator, so it loads no model.
+  /// A dry run never resolves a generator, so it loads no model. `loadGenerator`
+  /// replaces the model manager (tests inject a fake).
   ///
   /// - Returns: The number of takes that failed to render.
   @discardableResult
-  public func execute(emit: (String) -> Void) async throws -> Int {
+  public func execute(
+    loadGenerator: ((StableAudioModelRepo) async throws -> any AmbienteGenerator)? = nil,
+    emit: (String) -> Void
+  ) async throws -> Int {
     let screenplayURL = URL(fileURLWithPath: screenplay).standardizedFileURL
     var isDirectory: ObjCBool = false
     guard FileManager.default.fileExists(atPath: screenplayURL.path, isDirectory: &isDirectory),
@@ -87,40 +91,72 @@ public struct AmbienteRenderCommand: AsyncParsableCommand {
 
     var outcomes: [Int: AmbienceRenderOutcome] = [:]
     var failures = 0
-    let selected = Self.entriesToRender(in: plan, force: force)
+    let selectedAmbience = Self.entriesToRender(in: plan, force: force)
+    let selectedFoley = Self.foleyEntriesToRender(in: plan, force: force)
+
+    // One work list across both kinds, in document order.
+    struct Job {
+      var noteIndex: Int
+      var line: Int
+      var output: URL
+      var model: String
+      var render: (any AmbienteGenerator, URL) async throws -> Void
+    }
+    var jobs: [Job] = []
+    for entry in selectedAmbience {
+      guard let output = entry.output else { continue }
+      jobs.append(
+        Job(
+          noteIndex: entry.noteIndex, line: entry.line, output: output,
+          model: entry.ambience.effectiveModel,
+          render: { generator, url in
+            _ = try await generator.render(ambience: entry.ambience, to: url)
+          }
+        ))
+    }
+    for entry in selectedFoley {
+      guard let output = entry.output else { continue }
+      jobs.append(
+        Job(
+          noteIndex: entry.noteIndex, line: entry.line, output: output,
+          model: entry.foley.effectiveModel,
+          render: { generator, url in _ = try await generator.render(foley: entry.foley, to: url) }
+        ))
+    }
+    jobs.sort { $0.noteIndex < $1.noteIndex }
 
     if dryRun {
-      for entry in selected { outcomes[entry.noteIndex] = .wouldRender }
-    } else if !selected.isEmpty {
+      for job in jobs { outcomes[job.noteIndex] = .wouldRender }
+    } else if !jobs.isEmpty {
       // The note's `model` picks the backend, loaded (downloaded on first use)
       // through the model manager. Unlike `AmbienteEngine.resolveGenerator`,
       // there is no procedural fallback: a fallback take would get a render
       // record matching the note's digest and read as `current`, so the real
       // model would never replace it.
       let manager = AmbienteModelManager()
+      let load = loadGenerator ?? { repo in try await manager.loadGenerator(repo) }
       var generators: [StableAudioModelRepo: Result<any AmbienteGenerator, any Error>] = [:]
-      for entry in selected {
-        guard let output = entry.output else { continue }
+      for job in jobs {
         do {
-          let repo = try AmbienceModel.resolve(entry.ambience.effectiveModel).modelRepo
+          let repo = try AmbienceModel.resolve(job.model).modelRepo
           if generators[repo] == nil {
             FileHandle.standardError.write(Data("loading model \(repo.rawValue)\n".utf8))
             do {
-              generators[repo] = .success(try await manager.loadGenerator(repo))
+              generators[repo] = .success(try await load(repo))
             } catch {
               generators[repo] = .failure(error)
             }
           }
           let generator = try generators[repo]!.get()
           FileHandle.standardError.write(
-            Data("rendering note \(entry.noteIndex) (line \(entry.line)) → \(output.path)\n".utf8))
-          _ = try await generator.render(ambience: entry.ambience, to: output)
-          outcomes[entry.noteIndex] = .rendered
+            Data("rendering note \(job.noteIndex) (line \(job.line)) → \(job.output.path)\n".utf8))
+          try await job.render(generator, job.output)
+          outcomes[job.noteIndex] = .rendered
         } catch {
           failures += 1
-          outcomes[entry.noteIndex] = .failed
+          outcomes[job.noteIndex] = .failed
           Self.warn(
-            "note \(entry.noteIndex) (line \(entry.line)): render failed: \(error.localizedDescription)",
+            "note \(job.noteIndex) (line \(job.line)): render failed: \(error.localizedDescription)",
             prefix: "error: ")
         }
       }
@@ -155,6 +191,22 @@ public struct AmbienteRenderCommand: AsyncParsableCommand {
     }
   }
 
+  /// The foley counterpart of ``entriesToRender(in:force:)``: renderable
+  /// (prompt, resolved output) `changed` / `notRendered` foley takes, plus
+  /// `current` and `unknown` ones with `force`.
+  public static func foleyEntriesToRender(in plan: AmbiencePlan, force: Bool) -> [FoleyPlanEntry] {
+    plan.foleyEntries.filter { entry in
+      guard entry.output != nil, let state = entry.state,
+        let prompt = entry.foley.prompt,
+        !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      else { return false }
+      switch state {
+      case .changed, .notRendered: return true
+      case .current, .unknown: return force
+      }
+    }
+  }
+
   /// Planner warnings, note diagnostics, unreadable-record warnings, and one
   /// warning per `unknown` take (kept, or overwritten when `force`), ready to print.
   public static func warnings(for plan: AmbiencePlan, force: Bool = false) -> [String] {
@@ -164,6 +216,18 @@ public struct AmbienteRenderCommand: AsyncParsableCommand {
       result.append("\(line)\(diagnostic.message)")
     }
     for entry in plan.entries {
+      if let warning = entry.status?.warning {
+        result.append("note \(entry.noteIndex) (line \(entry.line)): \(warning)")
+      }
+      if entry.state == .unknown, let output = entry.output {
+        result.append(
+          force
+            ? "note \(entry.noteIndex) (line \(entry.line)): \(output.path) has no render record (hand-placed?); overwriting it (--force)."
+            : "note \(entry.noteIndex) (line \(entry.line)): \(output.path) has no render record (hand-placed?); left as is."
+        )
+      }
+    }
+    for entry in plan.foleyEntries {
       if let warning = entry.status?.warning {
         result.append("note \(entry.noteIndex) (line \(entry.line)): \(warning)")
       }
@@ -187,8 +251,8 @@ public struct AmbienteRenderCommand: AsyncParsableCommand {
     case failed
   }
 
-  /// The state table: one row per `ambience` note — note index, screenplay
-  /// line, render state, action, prompt excerpt and output path (relative to
+  /// The state table: one row per `ambience` or `foley` note, in document
+  /// order — note index, kind, screenplay line, render state, action, prompt excerpt and output path (relative to
   /// the plan's output base when inside it).
   ///
   /// Pure: reads only `plan` and `outcomes`, so it is testable without a
@@ -196,38 +260,52 @@ public struct AmbienteRenderCommand: AsyncParsableCommand {
   public static func stateTable(
     for plan: AmbiencePlan, outcomes: [Int: AmbienceRenderOutcome] = [:]
   ) -> String {
-    let header = ["NOTE", "LINE", "STATE", "ACTION", "PROMPT", "OUTPUT"]
-    var rows: [[String]] = []
-    for entry in plan.entries {
-      let state: String
-      if entry.ambience.stop {
-        state = "stop"
-      } else {
-        state = entry.state?.rawValue ?? "-"
-      }
-      let action: String
-      if let outcome = outcomes[entry.noteIndex] {
-        action = outcome.rawValue
-      } else if entry.state == .unknown {
-        action = "keep"
-      } else {
-        action = "-"
-      }
-      rows.append([
-        String(entry.noteIndex),
-        String(entry.line),
-        state,
-        action,
-        promptExcerpt(entry.ambience.prompt),
-        entry.output.map { displayPath($0, base: plan.outputBase) } ?? "-",
-      ])
+    let header = ["NOTE", "KIND", "LINE", "STATE", "ACTION", "PROMPT", "OUTPUT"]
+    // (noteIndex, row) pairs from both kinds, merged into document order.
+    var indexed: [(Int, [String])] = []
+
+    func action(_ noteIndex: Int, _ state: AmbienceRenderState?) -> String {
+      if let outcome = outcomes[noteIndex] { return outcome.rawValue }
+      return state == .unknown ? "keep" : "-"
     }
+
+    for entry in plan.entries {
+      indexed.append(
+        (
+          entry.noteIndex,
+          [
+            String(entry.noteIndex),
+            "ambience",
+            String(entry.line),
+            entry.ambience.stop ? "stop" : (entry.state?.rawValue ?? "-"),
+            action(entry.noteIndex, entry.state),
+            promptExcerpt(entry.ambience.prompt),
+            entry.output.map { displayPath($0, base: plan.outputBase) } ?? "-",
+          ]
+        ))
+    }
+    for entry in plan.foleyEntries {
+      indexed.append(
+        (
+          entry.noteIndex,
+          [
+            String(entry.noteIndex),
+            "foley",
+            String(entry.line),
+            entry.state?.rawValue ?? "-",
+            action(entry.noteIndex, entry.state),
+            promptExcerpt(entry.foley.prompt),
+            entry.output.map { displayPath($0, base: plan.outputBase) } ?? "-",
+          ]
+        ))
+    }
+    let rows = indexed.sorted { $0.0 < $1.0 }.map(\.1)
 
     var lines: [String] = []
     lines.append("Screenplay: \(plan.screenplay.path)")
     lines.append("Outputs relative to: \(plan.outputBase.path)")
-    if plan.entries.isEmpty {
-      lines.append("No ambience notes.")
+    if rows.isEmpty {
+      lines.append("No ambience or foley notes.")
       return lines.joined(separator: "\n")
     }
     let all = [header] + rows
