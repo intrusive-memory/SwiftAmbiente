@@ -43,7 +43,7 @@ private enum LatentSamplerFixture {
   }
 }
 
-@Suite("Stable Audio DiT sampler → latent (Sortie 8)", .serialized)
+@Suite("Stable Audio DiT sampler → latent (Sortie 8)", .serialized, .serializedOnGPU)
 struct StableAudioLatentSamplerTests {
 
   // A small fixed duration keeps the DiT sequence short so the model-present

@@ -74,7 +74,7 @@ enum StableAudioModelFixture {
   }
 }
 
-@Suite("Stable Audio model config + asset loading", .acervoEnvironment, .serialized)
+@Suite("Stable Audio model config + asset loading", .acervoEnvironment, .serialized, .serializedOnGPU)
 struct StableAudioModelLoadingTests {
 
   @Test(
