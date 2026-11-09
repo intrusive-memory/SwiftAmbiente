@@ -101,7 +101,10 @@ Every suite that loads the model or runs MLX on the GPU must carry the
 `.serializedOnGPU` suite trait (`Tests/SwiftAmbienteTests/GPUSerializationTrait.swift`).
 Swift Testing runs suites in parallel, and concurrent GPU suites on the CI runner's
 virtualized GPU trip the Metal watchdog (`kIOGPUCommandBufferCallbackErrorTimeout`),
-which aborts the whole test process.
+which aborts the whole test process. Serializing alone is not enough: one large
+MLX command buffer can still outrun the watchdog on that GPU, so the integration
+workflow also sets `TEST_RUNNER_MLX_MAX_OPS_PER_BUFFER` / `TEST_RUNNER_MLX_MAX_MB_PER_BUFFER`
+to commit small buffers. Keep both.
 
 ## CLI — `ambiente`
 

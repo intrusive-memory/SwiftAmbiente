@@ -77,6 +77,16 @@ jobs:
           TEST_RUNNER_ACERVO_MODELS_DIR: ${{ env.ACERVO_MODELS_DIR }}
           TEST_RUNNER_ACERVO_OFFLINE: "1"
           TEST_RUNNER_ACERVO_CDN_BASE_URL: ${{ env.ACERVO_CDN_BASE_URL }}
+          # The hosted runner's virtualized GPU is far slower than real
+          # Apple Silicon. MLX batches up to ~40 ops / 40 MB into one Metal
+          # command buffer by default; on this GPU a heavy buffer (T5Gemma
+          # encoder, DiT cfg batch) can run past the Metal watchdog
+          # (kIOGPUCommandBufferCallbackErrorTimeout), which MLX turns into
+          # an uncaught exception that aborts xctest. Commit small buffers so
+          # each finishes well inside the watchdog. Output is unchanged; only
+          # the commit granularity differs.
+          TEST_RUNNER_MLX_MAX_OPS_PER_BUFFER: "2"
+          TEST_RUNNER_MLX_MAX_MB_PER_BUFFER: "8"
         run: |
           xcodebuild test-without-building \
             -scheme SwiftAmbiente-Package \
