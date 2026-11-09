@@ -13,7 +13,7 @@ import Testing
 
 @testable import SwiftAmbiente
 
-@Suite("StableAudioGenerator", .acervoEnvironment, .serialized)
+@Suite("StableAudioGenerator", .acervoEnvironment, .serialized, .serializedOnGPU)
 struct StableAudioGeneratorTests {
 
   private static let bogusDir = URL(fileURLWithPath: "/nonexistent/stable-audio-model")
